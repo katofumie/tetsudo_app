@@ -9,7 +9,7 @@
     --bg:#e8eef0; --paper:#f3f6f7;
     --off:#9aa7b4; --on:#1fb866; --on2:#16a05a;
     --pass:#9aa7b4; --get:#1fb866; --stay:#f5a623;
-    --ink:#37454f; --muted:#7b8794; --accent:#ff5a3c;
+    --ink:#37454f; --muted:#7b8794; --pref:#a9b6c2; --onsen:#e2622e; --spot:#3b82c4;
   }
   *{ box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
   html,body{ margin:0; height:100%; overflow:hidden; background:var(--bg);
@@ -25,8 +25,12 @@
   .stn.pass{ fill:var(--pass); stroke:var(--pass); }
   .stn.off{ fill:var(--get); stroke:var(--on2); }
   .stn.stay{ fill:var(--stay); stroke:#c77f10; }
-  .lbl{ fill:var(--ink); pointer-events:none; paint-order:stroke; stroke:var(--paper); stroke-width:3px;
-    stroke-linejoin:round; font-weight:600; }
+  .poi{ vector-effect:non-scaling-stroke; }
+  text{ paint-order:stroke; stroke:var(--paper); stroke-width:2.6; stroke-linejoin:round;
+    vector-effect:non-scaling-stroke; }
+  .lbl{ fill:var(--ink); font-weight:600; pointer-events:none; }
+  .preflbl{ fill:var(--pref); font-weight:800; letter-spacing:.06em; pointer-events:none; }
+  .poilbl{ fill:#5a6b59; font-weight:700; pointer-events:none; }
   .hud{ position:absolute; top:10px; left:10px; right:10px; z-index:2; display:flex; gap:8px;
     background:rgba(255,255,255,.86); border-radius:14px; padding:9px 10px; box-shadow:0 2px 10px rgba(0,0,0,.08); }
   .hud .cell{ flex:1; text-align:center; } .hud .label{ font-size:10px; color:var(--muted); }
@@ -52,7 +56,8 @@
 <body>
 <div id="wrap">
   <svg id="svg" xmlns="http://www.w3.org/2000/svg">
-    <g id="gHit"></g><g id="gSeg"></g><g id="gStn"></g><g id="gLbl"></g>
+    <g id="gPref"></g><g id="gHit"></g><g id="gSeg"></g>
+    <g id="gPoi"></g><g id="gPoiLbl"></g><g id="gStn"></g><g id="gLbl"></g>
   </svg>
 </div>
 
@@ -68,8 +73,9 @@
   <div class="row">
     <b>🚆 乗りつぶしアトラス</b>
     <button id="reset">リセット</button>
-    <button id="fit">全体表示</button>
-    <label class="fake" style="margin-left:auto;">📁 GeoJSON読込
+    <button id="fit">鉄道へ</button>
+    <button id="japan">日本全体</button>
+    <label class="fake" style="margin-left:auto;">📁 GeoJSON
       <input id="file" type="file" accept=".geojson,.json,application/geo+json" style="display:none"></label>
   </div>
   <div class="legend">
@@ -77,16 +83,18 @@
     <span><i style="background:var(--pass)"></i>通過</span>
     <span><i style="background:var(--get)"></i>下車</span>
     <span><i style="background:var(--stay)"></i>泊まった</span>
+    <span><i style="background:var(--onsen)"></i>♨温泉</span>
+    <span><i style="background:var(--spot)"></i>観光</span>
   </div>
-  <div class="hint">線をタップで塗る／駅をタップで 通過→下車→泊まった。ドラッグで移動・ピンチ/ホイールで拡大縮小。
-    路線GeoJSONをドロップで実データ表示。※サンプルは概略座標。</div>
+  <div class="hint">線=塗る／駅=通過→下車→泊まった。ドラッグ移動・ピンチ/ホイール拡大。引くと県名・温泉・観光、寄ると駅名。
+    ※鉄道サンプル/スポットは概略の内蔵データ。県境は実データ取込時に追加予定。</div>
 </div>
 
 <div class="toast" id="toast"></div>
 <div class="drop" id="drop">路線GeoJSONをドロップ</div>
 
 <script>
-// ===== サンプル路線（概略座標・体感用）。引くと網に見えるよう放射状に配置 =====
+// ===== サンプル鉄道（概略座標）。引くと網に見えるよう放射状 =====
 const LINES = [
   { name:'山手線', loop:true, stations:[
     ['東京',35.681,139.767],['神田',35.692,139.771],['秋葉原',35.698,139.773],['御徒町',35.707,139.774],
@@ -106,160 +114,151 @@ const LINES = [
     ['品川',35.628,139.738],['川崎',35.531,139.697],['横浜',35.466,139.622] ] },
 ];
 
+// ===== 県名（47都道府県・概略重心） =====
+const PREFS=[['北海道',43.2,142.8],['青森',40.7,140.7],['岩手',39.5,141.3],['宮城',38.4,140.9],['秋田',39.7,140.4],
+['山形',38.4,140.1],['福島',37.4,140.2],['茨城',36.3,140.3],['栃木',36.7,139.8],['群馬',36.5,138.9],
+['埼玉',35.95,139.4],['千葉',35.5,140.2],['東京',35.69,139.5],['神奈川',35.4,139.3],['新潟',37.5,138.9],
+['富山',36.7,137.2],['石川',36.8,136.8],['福井',35.9,136.3],['山梨',35.6,138.6],['長野',36.1,138.0],
+['岐阜',35.8,137.0],['静岡',34.9,138.3],['愛知',35.0,137.2],['三重',34.5,136.4],['滋賀',35.1,136.1],
+['京都',35.2,135.5],['大阪',34.6,135.5],['兵庫',35.0,134.8],['奈良',34.4,135.8],['和歌山',34.0,135.4],
+['鳥取',35.4,133.8],['島根',35.0,132.5],['岡山',34.9,133.8],['広島',34.6,132.8],['山口',34.2,131.5],
+['徳島',34.0,134.3],['香川',34.3,134.0],['愛媛',33.7,132.9],['高知',33.5,133.4],['福岡',33.6,130.7],
+['佐賀',33.3,130.1],['長崎',33.0,129.9],['熊本',32.6,130.7],['大分',33.2,131.4],['宮崎',32.2,131.3],
+['鹿児島',31.6,130.6],['沖縄',26.5,128.0]];
+
+// ===== 温泉地・観光地（著名スポット・概略座標） type: o=温泉, s=観光 =====
+const POIS=[
+['草津温泉',36.62,138.59,'o'],['箱根湯本',35.23,139.10,'o'],['熱海温泉',35.10,139.07,'o'],['鬼怒川温泉',36.82,139.70,'o'],
+['那須温泉',37.12,139.97,'o'],['伊香保温泉',36.49,138.92,'o'],['水上温泉',36.79,138.99,'o'],['四万温泉',36.63,138.74,'o'],
+['湯河原温泉',35.15,139.10,'o'],['別府温泉',33.28,131.50,'o'],['由布院温泉',33.26,131.36,'o'],['道後温泉',33.85,132.79,'o'],
+['登別温泉',42.42,141.15,'o'],['有馬温泉',34.80,135.25,'o'],
+['日光東照宮',36.76,139.60,'s'],['鎌倉',35.32,139.55,'s'],['川越',35.92,139.49,'s'],['高尾山',35.63,139.24,'s'],
+['富士山',35.36,138.73,'s'],['河口湖',35.51,138.76,'s'],['江ノ島',35.30,139.48,'s'],['偕楽園',36.37,140.45,'s'],
+['成田山',35.79,140.32,'s'],['軽井沢',36.35,138.63,'s'],['秩父',35.99,139.08,'s'],['スカイツリー',35.71,139.81,'s'],
+['京都',35.01,135.77,'s'],['大阪城',34.69,135.53,'s'],['札幌',43.06,141.35,'s'],['函館',41.77,140.73,'s'],
+['仙台',38.27,140.87,'s'],['金沢',36.56,136.66,'s'],['広島',34.40,132.46,'s'],['姫路城',34.84,134.69,'s']];
+
 const LAT0=35.7, KX=Math.cos(LAT0*Math.PI/180);
-const px=(lng,lat)=>[ lng*KX, -lat ];           // 簡易正距円筒投影（ユーザー座標=度）
+const px=(lng,lat)=>[ lng*KX, -lat ];
 const svg=document.getElementById('svg');
-const gHit=document.getElementById('gHit'), gSeg=document.getElementById('gSeg'),
-      gStn=document.getElementById('gStn'), gLbl=document.getElementById('gLbl');
+const gPref=g('gPref'),gHit=g('gHit'),gSeg=g('gSeg'),gPoi=g('gPoi'),gPoiLbl=g('gPoiLbl'),gStn=g('gStn'),gLbl=g('gLbl');
+function g(id){return document.getElementById(id);}
 const NS='http://www.w3.org/2000/svg';
-const mk=(t,a)=>{const e=document.createElementNS(NS,t);for(const k in a)e.setAttribute(k,a[k]);return e;};
+const mk=(t,a,txt)=>{const e=document.createElementNS(NS,t);for(const k in a)e.setAttribute(k,a[k]); if(txt!=null)e.textContent=txt; return e;};
 function hav(a,b){ const R=6371,r=x=>x*Math.PI/180; const dla=r(b.lat-a.lat),dlo=r(b.lng-a.lng);
   const s=Math.sin(dla/2)**2+Math.cos(r(a.lat))*Math.cos(r(b.lat))*Math.sin(dlo/2)**2; return 2*R*Math.asin(Math.sqrt(s)); }
 function vibrate(p){ if(navigator.vibrate){ try{navigator.vibrate(p);}catch(e){} } }
-function toast(m){ const t=document.getElementById('toast'); t.textContent=m; t.classList.add('show');
-  clearTimeout(t._t); t._t=setTimeout(()=>t.classList.remove('show'),1100); }
+function toast(m){ const t=g('toast'); t.textContent=m; t.classList.add('show'); clearTimeout(t._t); t._t=setTimeout(()=>t.classList.remove('show'),1100); }
 
 let segs=[], stns=[], showStations=true;
 
 function buildSample(){
-  segs=[]; stns=[]; showStations=true;
-  const seen=new Map(); let sid=0;
-  LINES.forEach(line=>{
-    const L=line.stations, last=line.loop?L.length:L.length-1;
-    L.forEach(st=>{ const key=st[0]; if(!seen.has(key)){ seen.set(key,sid);
-      stns.push({id:sid, name:st[0], lat:st[1], lng:st[2], st:0, p:px(st[2],st[1])}); sid++; } });
+  segs=[]; stns=[]; showStations=true; const seen=new Map(); let sid=0;
+  LINES.forEach(line=>{ const L=line.stations, last=line.loop?L.length:L.length-1;
+    L.forEach(st=>{ if(!seen.has(st[0])){ seen.set(st[0],sid);
+      stns.push({id:sid,name:st[0],lat:st[1],lng:st[2],st:0,p:px(st[2],st[1])}); sid++; } });
     for(let i=0;i<last;i++){ const a=L[i], b=L[(i+1)%L.length];
-      const ax=px(a[2],a[1]), bx=px(b[2],b[1]);
-      segs.push({ id:segs.length, pts:[ax,bx], on:false, km:hav({lat:a[1],lng:a[2]},{lat:b[1],lng:b[2]}) }); }
+      segs.push({ id:segs.length, pts:[px(a[2],a[1]),px(b[2],b[1])], on:false, km:hav({lat:a[1],lng:a[2]},{lat:b[1],lng:b[2]}) }); }
   });
 }
-
 function buildFromGeoJSON(gj){
   segs=[]; stns=[]; showStations=false;
   const feats = gj.type==='FeatureCollection'?gj.features:(gj.type==='Feature'?[gj]:[]);
-  const add=coords=>{ if(coords.length<2) return; const pts=coords.map(c=>px(c[0],c[1]));
-    let km=0; for(let i=0;i<coords.length-1;i++) km+=hav({lng:coords[i][0],lat:coords[i][1]},{lng:coords[i+1][0],lat:coords[i+1][1]});
-    segs.push({ id:segs.length, pts, on:false, km }); };
-  feats.forEach(f=>{ const g=f.geometry; if(!g) return;
-    if(g.type==='LineString') add(g.coordinates);
-    else if(g.type==='MultiLineString') g.coordinates.forEach(add); });
+  const add=c=>{ if(c.length<2)return; const pts=c.map(p=>px(p[0],p[1])); let km=0;
+    for(let i=0;i<c.length-1;i++) km+=hav({lng:c[i][0],lat:c[i][1]},{lng:c[i+1][0],lat:c[i+1][1]});
+    segs.push({id:segs.length,pts,on:false,km}); };
+  feats.forEach(f=>{ const gm=f.geometry; if(!gm)return;
+    if(gm.type==='LineString') add(gm.coordinates); else if(gm.type==='MultiLineString') gm.coordinates.forEach(add); });
 }
-
-function path(pts){ return 'M'+pts.map(p=>p[0].toFixed(5)+' '+p[1].toFixed(5)).join(' L'); }
-
-function render(){
-  gHit.innerHTML=gSeg.innerHTML=gStn.innerHTML=gLbl.innerHTML='';
-  segs.forEach(s=>{
-    gSeg.appendChild(mk('path',{d:path(s.pts), class:'seg'+(s.on?' on':''), 'data-seg':s.id}));
-    gHit.appendChild(mk('path',{d:path(s.pts), class:'hit', 'data-seg':s.id}));
-  });
-  if(showStations) stns.forEach(s=>{
-    gStn.appendChild(mk('circle',{cx:s.p[0], cy:s.p[1], r:0.004, class:'stn'+stCls(s.st), 'data-stn':s.id}));
-    gLbl.appendChild(Object.assign(mk('text',{x:s.p[0], y:s.p[1]-0.006, 'text-anchor':'middle', class:'lbl'}),{textContent:s.name}));
-  });
-  document.getElementById('segT').textContent=segs.length;
-  document.getElementById('stnT').textContent=showStations?stns.length:0;
-  applyScale(); update();
-}
+const pathd=pts=>'M'+pts.map(p=>p[0].toFixed(5)+' '+p[1].toFixed(5)).join(' L');
 const stCls=s=>['',' pass',' off',' stay'][s];
 
-// ===== ビューボックス（パン・ズーム） =====
-let vb={x:0,y:0,w:1,h:1};
-function fit(){
-  const xs=[], ys=[]; segs.forEach(s=>s.pts.forEach(p=>{xs.push(p[0]); ys.push(p[1]);}));
-  if(!xs.length){ return; }
-  const minx=Math.min(...xs),maxx=Math.max(...xs),miny=Math.min(...ys),maxy=Math.max(...ys);
-  const pad=(maxx-minx||0.02)*0.12;
-  let w=(maxx-minx)+pad*2, h=(maxy-miny)+pad*2;
-  const ar=svg.clientWidth/svg.clientHeight;
-  if(w/h<ar){ const nw=h*ar; vb={x:minx-pad-(nw-w)/2, y:miny-pad, w:nw, h}; }
-  else { const nh=w/ar; vb={x:minx-pad, y:miny-pad-(nh-h)/2, w, h:nh}; }
-  applyScale();
+function render(){
+  [gPref,gHit,gSeg,gPoi,gPoiLbl,gStn,gLbl].forEach(x=>x.innerHTML='');
+  // 県名
+  PREFS.forEach(p=>{ const c=px(p[2],p[1]); gPref.appendChild(mk('text',{x:c[0],y:c[1],'text-anchor':'middle',class:'preflbl'},p[0])); });
+  // 温泉・観光
+  POIS.forEach(p=>{ const c=px(p[2],p[1]); const col=p[3]==='o'?'var(--onsen)':'var(--spot)';
+    gPoi.appendChild(mk('circle',{cx:c[0],cy:c[1],r:0.003,fill:col,stroke:'#fff','stroke-width':1.4,class:'poi'}));
+    gPoiLbl.appendChild(mk('text',{x:c[0],y:c[1]-0.006,'text-anchor':'middle',class:'poilbl'},(p[3]==='o'?'♨':'')+p[0])); });
+  // 鉄道
+  segs.forEach(s=>{ gSeg.appendChild(mk('path',{d:pathd(s.pts),class:'seg'+(s.on?' on':''),'data-seg':s.id}));
+    gHit.appendChild(mk('path',{d:pathd(s.pts),class:'hit','data-seg':s.id})); });
+  if(showStations) stns.forEach(s=>{ gStn.appendChild(mk('circle',{cx:s.p[0],cy:s.p[1],r:0.004,class:'stn'+stCls(s.st),'data-stn':s.id}));
+    gLbl.appendChild(mk('text',{x:s.p[0],y:s.p[1]-0.006,'text-anchor':'middle',class:'lbl'},s.name)); });
+  g('segT').textContent=segs.length; g('stnT').textContent=showStations?stns.length:0;
+  applyScale(); update();
 }
+
+// ===== ビューボックス =====
+let vb={x:0,y:0,w:1,h:1};
+function fitTo(xs,ys){ if(!xs.length)return;
+  const minx=Math.min(...xs),maxx=Math.max(...xs),miny=Math.min(...ys),maxy=Math.max(...ys);
+  const pad=((maxx-minx)||0.02)*0.12; let w=(maxx-minx)+pad*2,h=(maxy-miny)+pad*2;
+  const ar=svg.clientWidth/svg.clientHeight;
+  if(w/h<ar){ const nw=h*ar; vb={x:minx-pad-(nw-w)/2,y:miny-pad,w:nw,h}; }
+  else { const nh=w/ar; vb={x:minx-pad,y:miny-pad-(nh-h)/2,w,h:nh}; } applyScale();
+}
+function fitRail(){ const xs=[],ys=[]; segs.forEach(s=>s.pts.forEach(p=>{xs.push(p[0]);ys.push(p[1]);})); fitTo(xs,ys); }
+function fitJapan(){ const xs=[],ys=[]; PREFS.forEach(p=>{const c=px(p[2],p[1]);xs.push(c[0]);ys.push(c[1]);}); fitTo(xs,ys); }
 function applyScale(){
   svg.setAttribute('viewBox', `${vb.x} ${vb.y} ${vb.w} ${vb.h}`);
-  const s = vb.w / svg.clientWidth;             // ユーザー単位/画面px
-  gLbl.setAttribute('font-size', 11*s);
-  const showLbl = s < 0.00018;                  // 拡大時のみ駅名
-  gLbl.style.display = (showStations && showLbl)?'':'none';
-  const r = 3.4*s;
-  gStn.querySelectorAll('circle').forEach(c=> c.setAttribute('r', r));
+  const s=vb.w/svg.clientWidth;
+  gLbl.setAttribute('font-size',10*s); gPoiLbl.setAttribute('font-size',9.5*s); gPref.setAttribute('font-size',15*s);
+  gLbl.style.display   =(showStations && s<=0.00022)?'':'none';
+  gPoiLbl.style.display=(s<=0.00045)?'':'none';
+  gPoi.style.display   =(s<=0.0011)?'':'none';
+  gPref.style.display  =(s>=0.00011)?'':'none';
+  const rs=3.4*s; gStn.querySelectorAll('circle').forEach(c=>c.setAttribute('r',rs));
+  const rp=3.0*s; gPoi.querySelectorAll('circle').forEach(c=>c.setAttribute('r',rp));
 }
 
-// ===== 入力（タップ判定 + パン + ピンチ） =====
-const ptrs=new Map(); let moved=false, startT=0, panLast=null, pinchD=0;
-function toUser(cx,cy){ const r=svg.getBoundingClientRect();
-  return { x: vb.x + (cx-r.left)/r.width*vb.w, y: vb.y + (cy-r.top)/r.height*vb.h }; }
-svg.addEventListener('pointerdown', e=>{ svg.setPointerCapture(e.pointerId);
-  ptrs.set(e.pointerId,{x:e.clientX,y:e.clientY}); moved=false; startT=Date.now();
-  if(ptrs.size===1){ panLast={x:e.clientX,y:e.clientY}; }
-  else if(ptrs.size===2){ const p=[...ptrs.values()]; pinchD=Math.hypot(p[0].x-p[1].x,p[0].y-p[1].y); }
-});
-svg.addEventListener('pointermove', e=>{
-  if(!ptrs.has(e.pointerId)) return; ptrs.set(e.pointerId,{x:e.clientX,y:e.clientY});
-  if(ptrs.size===1 && panLast){
-    const dx=e.clientX-panLast.x, dy=e.clientY-panLast.y;
-    if(Math.abs(dx)+Math.abs(dy)>4) moved=true;
-    const r=svg.getBoundingClientRect();
-    vb.x-=dx/r.width*vb.w; vb.y-=dy/r.height*vb.h; panLast={x:e.clientX,y:e.clientY}; applyScale();
-  } else if(ptrs.size===2){
-    moved=true; const p=[...ptrs.values()]; const d=Math.hypot(p[0].x-p[1].x,p[0].y-p[1].y);
-    if(pinchD){ const mid=toUser((p[0].x+p[1].x)/2,(p[0].y+p[1].y)/2); const k=pinchD/d;
-      zoomAt(mid,k); } pinchD=d;
-  }
-});
-function endPtr(e){ const wasTap = ptrs.size===1 && !moved && (Date.now()-startT)<350;
-  ptrs.delete(e.pointerId); panLast=null; pinchD=0;
-  if(wasTap) handleTap(e.clientX,e.clientY);
-}
-svg.addEventListener('pointerup', endPtr);
-svg.addEventListener('pointercancel', e=>{ ptrs.delete(e.pointerId); panLast=null; pinchD=0; });
-function zoomAt(userPt,k){ k=Math.max(0.2,Math.min(5,k));
-  const nw=Math.max(0.0008,Math.min(40, vb.w*k)), nh=nw*(vb.h/vb.w);
-  vb.x=userPt.x-(userPt.x-vb.x)*(nw/vb.w); vb.y=userPt.y-(userPt.y-vb.y)*(nh/vb.h); vb.w=nw; vb.h=nh; applyScale(); }
-svg.addEventListener('wheel', e=>{ e.preventDefault(); zoomAt(toUser(e.clientX,e.clientY), e.deltaY>0?1.15:0.87); }, {passive:false});
+// ===== 入力 =====
+const ptrs=new Map(); let moved=false,startT=0,panLast=null,pinchD=0;
+function toUser(cx,cy){ const r=svg.getBoundingClientRect(); return {x:vb.x+(cx-r.left)/r.width*vb.w, y:vb.y+(cy-r.top)/r.height*vb.h}; }
+svg.addEventListener('pointerdown',e=>{ svg.setPointerCapture(e.pointerId); ptrs.set(e.pointerId,{x:e.clientX,y:e.clientY}); moved=false; startT=Date.now();
+  if(ptrs.size===1) panLast={x:e.clientX,y:e.clientY}; else if(ptrs.size===2){ const p=[...ptrs.values()]; pinchD=Math.hypot(p[0].x-p[1].x,p[0].y-p[1].y); } });
+svg.addEventListener('pointermove',e=>{ if(!ptrs.has(e.pointerId))return; ptrs.set(e.pointerId,{x:e.clientX,y:e.clientY});
+  if(ptrs.size===1&&panLast){ const dx=e.clientX-panLast.x,dy=e.clientY-panLast.y; if(Math.abs(dx)+Math.abs(dy)>4)moved=true;
+    const r=svg.getBoundingClientRect(); vb.x-=dx/r.width*vb.w; vb.y-=dy/r.height*vb.h; panLast={x:e.clientX,y:e.clientY}; applyScale(); }
+  else if(ptrs.size===2){ moved=true; const p=[...ptrs.values()]; const d=Math.hypot(p[0].x-p[1].x,p[0].y-p[1].y);
+    if(pinchD){ zoomAt(toUser((p[0].x+p[1].x)/2,(p[0].y+p[1].y)/2), pinchD/d); } pinchD=d; } });
+function endPtr(e){ const tap=ptrs.size===1&&!moved&&(Date.now()-startT)<350; ptrs.delete(e.pointerId); panLast=null; pinchD=0; if(tap) handleTap(e.clientX,e.clientY); }
+svg.addEventListener('pointerup',endPtr);
+svg.addEventListener('pointercancel',e=>{ ptrs.delete(e.pointerId); panLast=null; pinchD=0; });
+function zoomAt(u,k){ k=Math.max(0.2,Math.min(5,k)); const nw=Math.max(0.0006,Math.min(60,vb.w*k)),nh=nw*(vb.h/vb.w);
+  vb.x=u.x-(u.x-vb.x)*(nw/vb.w); vb.y=u.y-(u.y-vb.y)*(nh/vb.h); vb.w=nw; vb.h=nh; applyScale(); }
+svg.addEventListener('wheel',e=>{ e.preventDefault(); zoomAt(toUser(e.clientX,e.clientY), e.deltaY>0?1.15:0.87); },{passive:false});
 
-function handleTap(cx,cy){
-  const el=document.elementFromPoint(cx,cy); if(!el) return;
+function handleTap(cx,cy){ const el=document.elementFromPoint(cx,cy); if(!el)return;
   const stn=el.getAttribute('data-stn');
-  if(stn!=null){ const s=stns[+stn]; s.st=(s.st+1)%4;
-    el.setAttribute('class','stn'+stCls(s.st));
-    vibrate(s.st===3?[25,40,25]:(s.st===0?15:30));
-    toast(s.name+'：'+['未訪問','通過','下車','泊まった'][s.st]); update(); return; }
+  if(stn!=null){ const s=stns[+stn]; s.st=(s.st+1)%4; el.setAttribute('class','stn'+stCls(s.st));
+    vibrate(s.st===3?[25,40,25]:(s.st===0?15:30)); toast(s.name+'：'+['未訪問','通過','下車','泊まった'][s.st]); update(); return; }
   const seg=el.getAttribute('data-seg');
-  if(seg!=null){ const s=segs[+seg]; s.on=!s.on;
-    gSeg.querySelector(`[data-seg="${seg}"]`).setAttribute('class','seg'+(s.on?' on':''));
-    vibrate(s.on?35:18); update(s.on); }
-}
+  if(seg!=null){ const s=segs[+seg]; s.on=!s.on; gSeg.querySelector(`[data-seg="${seg}"]`).setAttribute('class','seg'+(s.on?' on':''));
+    vibrate(s.on?35:18); update(s.on); } }
 
 function update(milestone){
-  const n=segs.filter(s=>s.on).length;
-  const km=Math.round(segs.reduce((a,s)=>a+(s.on?s.km:0),0));
-  const rate=segs.length?Math.round(n/segs.length*100):0;
-  const stn=showStations?stns.filter(s=>s.st>0).length:0;
-  const rEl=document.getElementById('rate'); rEl.innerHTML=rate+'<small>%</small>';
-  document.getElementById('bar').style.width=rate+'%';
-  document.getElementById('segN').textContent=n; document.getElementById('km').textContent=km;
-  document.getElementById('stnN').textContent=stn;
+  const n=segs.filter(s=>s.on).length, km=Math.round(segs.reduce((a,s)=>a+(s.on?s.km:0),0));
+  const rate=segs.length?Math.round(n/segs.length*100):0, stn=showStations?stns.filter(s=>s.st>0).length:0;
+  const rEl=g('rate'); rEl.innerHTML=rate+'<small>%</small>'; g('bar').style.width=rate+'%';
+  g('segN').textContent=n; g('km').textContent=km; g('stnN').textContent=stn;
   rEl.classList.remove('pop'); void rEl.offsetWidth; rEl.classList.add('pop');
-  if(milestone && rate>0 && rate%25===0) toast('🎉 '+rate+'% 達成！');
+  if(milestone&&rate>0&&rate%25===0) toast('🎉 '+rate+'% 達成！');
 }
 
-document.getElementById('reset').addEventListener('click',()=>{
-  segs.forEach(s=>s.on=false); stns.forEach(s=>s.st=0); render(); toast('リセットしました'); });
-document.getElementById('fit').addEventListener('click', fit);
-function loadText(txt){ try{ buildFromGeoJSON(JSON.parse(txt)); render(); fit();
-  toast('実データ読込: '+segs.length+'区間'); }catch(e){ toast('GeoJSON解析に失敗'); } }
-document.getElementById('file').addEventListener('change',e=>{ const f=e.target.files[0]; if(!f)return;
-  const r=new FileReader(); r.onload=()=>loadText(r.result); r.readAsText(f); });
-const drop=document.getElementById('drop');
+g('reset').addEventListener('click',()=>{ segs.forEach(s=>s.on=false); stns.forEach(s=>s.st=0); render(); toast('リセットしました'); });
+g('fit').addEventListener('click',fitRail);
+g('japan').addEventListener('click',fitJapan);
+function loadText(t){ try{ buildFromGeoJSON(JSON.parse(t)); render(); fitRail(); toast('実データ読込: '+segs.length+'区間'); }catch(e){ toast('GeoJSON解析に失敗'); } }
+g('file').addEventListener('change',e=>{ const f=e.target.files[0]; if(!f)return; const r=new FileReader(); r.onload=()=>loadText(r.result); r.readAsText(f); });
+const drop=g('drop');
 ['dragenter','dragover'].forEach(ev=>document.addEventListener(ev,e=>{e.preventDefault();drop.classList.add('show');}));
 document.addEventListener('dragleave',e=>{ if(e.relatedTarget===null) drop.classList.remove('show'); });
-document.addEventListener('drop',e=>{ e.preventDefault(); drop.classList.remove('show');
-  const f=e.dataTransfer.files[0]; if(!f)return; const r=new FileReader(); r.onload=()=>loadText(r.result); r.readAsText(f); });
-
-window.addEventListener('resize', applyScale);
-buildSample(); render(); fit();
+document.addEventListener('drop',e=>{ e.preventDefault(); drop.classList.remove('show'); const f=e.dataTransfer.files[0]; if(!f)return;
+  const r=new FileReader(); r.onload=()=>loadText(r.result); r.readAsText(f); });
+window.addEventListener('resize',applyScale);
+buildSample(); render(); fitRail();
 </script>
 </body>
 </html>
