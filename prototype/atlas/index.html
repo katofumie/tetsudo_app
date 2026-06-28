@@ -367,7 +367,26 @@ const drop=g('drop');
 document.addEventListener('dragleave',e=>{ if(e.relatedTarget===null) drop.classList.remove('show'); });
 document.addEventListener('drop',e=>{ e.preventDefault(); drop.classList.remove('show'); const f=e.dataTransfer.files[0]; if(!f)return;
   const r=new FileReader(); r.onload=()=>loadText(r.result); r.readAsText(f); });
-function boot(){ sizeSvg(); buildSample(); render(); fitRail(); restore(); }
+// サイトに同梱されたデータをURLから自動取得(全デバイスで同じ地図に)
+async function tryFetchText(names){ if(typeof fetch==='undefined') return null;
+  for(const n of names){ try{ const r=await fetch(n,{cache:'no-cache'}); if(r&&r.ok) return await r.text(); }catch(e){} } return null; }
+async function init(){
+  let loaded=false;
+  const railTxt=await tryFetchText(['rail-color.geojson','rail.geojson']);
+  if(railTxt){ try{ const fc=JSON.parse(railTxt); const lines=(fc.features||[]).filter(f=>f.geometry&&/LineString/.test(f.geometry.type));
+    if(lines.length){ setRail(lines); store.rail={type:'FeatureCollection',features:lines}; loaded=true; } }catch(e){} }
+  const bordTxt=await tryFetchText(['borders.geojson','prefectures.geojson','japan.geojson','japan.geojson.txt']);
+  if(bordTxt){ try{ const fc=JSON.parse(bordTxt); const polys=(fc.features||[]).filter(f=>f.geometry&&/Polygon/.test(f.geometry.type));
+    if(polys.length){ setBorders(polys); store.borders={type:'FeatureCollection',features:polys}; loaded=true; } }catch(e){} }
+  if(loaded){
+    const st=await idbGet('state');
+    if(st&&st.paint){ store.paint=st.paint;
+      (st.paint.seg||[]).forEach(id=>{ if(segs[id]) segs[id].on=true; });
+      for(const k in (st.paint.stn||{})){ if(stns[k]) stns[k].st=st.paint.stn[k]; } }
+    render(); if(segs.length) fitRail(); toast('地図を読み込みました');
+  } else { restore(); }
+}
+function boot(){ sizeSvg(); buildSample(); render(); fitRail(); init(); }
 if(document.readyState==='loading') window.addEventListener('DOMContentLoaded',boot); else boot();
 window.addEventListener('load',()=>{ sizeSvg(); fitRail(); });   // 完全表示後に再フィット(Android対策)
 window.addEventListener('resize',()=>{ sizeSvg(); applyScale(); });
