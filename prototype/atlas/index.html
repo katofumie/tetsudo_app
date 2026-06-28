@@ -75,6 +75,7 @@
     <button id="reset">リセット</button>
     <button id="fit">鉄道へ</button>
     <button id="japan">日本全体</button>
+    <button id="sample">サンプル</button>
     <label class="fake" style="margin-left:auto;">📁 GeoJSON
       <input id="file" type="file" accept=".geojson,.json,application/geo+json" style="display:none"></label>
   </div>
@@ -159,6 +160,22 @@ function hav(a,b){ const R=6371,r=x=>x*Math.PI/180; const dla=r(b.lat-a.lat),dlo
 function vibrate(p){ if(navigator.vibrate){ try{navigator.vibrate(p);}catch(e){} } }
 function toast(m){ const t=g('toast'); t.textContent=m; t.classList.add('show'); clearTimeout(t._t); t._t=setTimeout(()=>t.classList.remove('show'),1100); }
 
+// ===== 自動保存・復元(IndexedDB)：読み込んだデータと塗った状態をブラウザに記憶 =====
+const store={rail:null,borders:null,spots:null,paint:{seg:[],stn:{}}};
+function idb(){ return new Promise((res,rej)=>{ if(!('indexedDB' in window)||!window.indexedDB) return rej();
+  const o=indexedDB.open('atlasStore',1);
+  o.onupgradeneeded=()=>{ if(!o.result.objectStoreNames.contains('kv')) o.result.createObjectStore('kv'); };
+  o.onsuccess=()=>res(o.result); o.onerror=()=>rej(); }); }
+async function idbSet(k,v){ try{ const db=await idb(); await new Promise(r=>{ const tx=db.transaction('kv','readwrite'); tx.objectStore('kv').put(v,k); tx.oncomplete=r; tx.onerror=r; }); }catch(e){} }
+async function idbGet(k){ try{ const db=await idb(); return await new Promise(r=>{ const tx=db.transaction('kv','readonly'); const rq=tx.objectStore('kv').get(k); rq.onsuccess=()=>r(rq.result); rq.onerror=()=>r(null); }); }catch(e){ return null; } }
+let saveT; function saveState(){ clearTimeout(saveT); saveT=setTimeout(()=>idbSet('state',store),300); }
+async function restore(){ const st=await idbGet('state'); if(!st||(!st.rail&&!st.borders&&!st.spots)) return;
+  if(st.rail) setRail(st.rail.features); if(st.borders) setBorders(st.borders.features); if(st.spots) setSpots(st.spots.features);
+  store.rail=st.rail||null; store.borders=st.borders||null; store.spots=st.spots||null; store.paint=st.paint||{seg:[],stn:{}};
+  (store.paint.seg||[]).forEach(id=>{ if(segs[id]) segs[id].on=true; });
+  for(const k in (store.paint.stn||{})){ if(stns[k]) stns[k].st=store.paint.stn[k]; }
+  render(); if(segs.length) fitRail(); toast('前回のデータを復元しました'); }
+
 let segs=[], stns=[], lineLbls=[], borders=[], showStations=true;
 let spots=POIS.map(p=>({name:p[0],lat:p[1],lng:p[2],type:p[3]}));
 
@@ -208,10 +225,10 @@ function routeGeoJSON(gj){
   const polys=feats.filter(f=>f.geometry&&/Polygon/.test(f.geometry.type));
   const pts  =feats.filter(f=>f.geometry&&f.geometry.type==='Point');
   const msg=[];
-  if(lines.length){ setRail(lines); msg.push(segs.length+'区間'); }
-  if(polys.length){ setBorders(polys); msg.push(borders.length+'境界'); }
-  if(pts.length){ setSpots(pts); msg.push(spots.length+'スポット'); }
-  render(); if(lines.length) fitRail();
+  if(lines.length){ setRail(lines); store.rail={type:'FeatureCollection',features:lines}; store.paint={seg:[],stn:{}}; msg.push(segs.length+'区間'); }
+  if(polys.length){ setBorders(polys); store.borders={type:'FeatureCollection',features:polys}; msg.push(borders.length+'境界'); }
+  if(pts.length){ setSpots(pts); store.spots={type:'FeatureCollection',features:pts}; msg.push(spots.length+'スポット'); }
+  render(); if(lines.length) fitRail(); saveState();
   toast('読込: '+(msg.join(' / ')||'対象なし'));
 }
 const pathd=pts=>'M'+pts.map(p=>p[0].toFixed(5)+' '+p[1].toFixed(5)).join(' L');
@@ -294,10 +311,12 @@ function pick(cx,cy){
 function handleTap(cx,cy){ const hit=pick(cx,cy); if(!hit)return;
   if(hit.stn!=null){ const s=stns[+hit.stn]; s.st=(s.st+1)%4;
     gStn.querySelector(`[data-stn="${hit.stn}"]`).setAttribute('class','stn'+stCls(s.st));
+    store.paint.stn[hit.stn]=s.st; saveState();
     vibrate(s.st===3?[25,40,25]:(s.st===0?15:30)); toast(s.name+'：'+['未訪問','通過','下車','泊まった'][s.st]); update(); return; }
   if(hit.seg!=null){ const s=segs[+hit.seg]; s.on=!s.on;
     gSeg.querySelector(`[data-seg="${hit.seg}"]`).setAttribute('class','seg'+(s.on?' on':''));
-    vibrate(s.on?35:18); update(s.on); } }
+    if(s.on) store.paint.seg.push(+hit.seg); else store.paint.seg=store.paint.seg.filter(x=>x!==+hit.seg);
+    saveState(); vibrate(s.on?35:18); update(s.on); } }
 
 function update(milestone){
   const n=segs.filter(s=>s.on).length, km=Math.round(segs.reduce((a,s)=>a+(s.on?s.km:0),0));
@@ -308,9 +327,12 @@ function update(milestone){
   if(milestone&&rate>0&&rate%25===0) toast('🎉 '+rate+'% 達成！');
 }
 
-g('reset').addEventListener('click',()=>{ segs.forEach(s=>s.on=false); stns.forEach(s=>s.st=0); render(); toast('リセットしました'); });
+g('reset').addEventListener('click',()=>{ segs.forEach(s=>s.on=false); stns.forEach(s=>s.st=0); store.paint={seg:[],stn:{}}; render(); saveState(); toast('塗りをリセットしました'); });
 g('fit').addEventListener('click',fitRail);
 g('japan').addEventListener('click',fitJapan);
+g('sample').addEventListener('click',()=>{ store.rail=store.borders=store.spots=null; store.paint={seg:[],stn:{}};
+  borders=[]; spots=POIS.map(p=>({name:p[0],lat:p[1],lng:p[2],type:p[3]}));
+  buildSample(); render(); fitRail(); idbSet('state',null); toast('サンプルに戻しました'); });
 function loadText(t){ try{ routeGeoJSON(JSON.parse(t)); }catch(e){ toast('GeoJSON解析に失敗'); } }
 g('file').addEventListener('change',e=>{ const f=e.target.files[0]; if(!f)return; const r=new FileReader(); r.onload=()=>loadText(r.result); r.readAsText(f); });
 const drop=g('drop');
@@ -318,7 +340,7 @@ const drop=g('drop');
 document.addEventListener('dragleave',e=>{ if(e.relatedTarget===null) drop.classList.remove('show'); });
 document.addEventListener('drop',e=>{ e.preventDefault(); drop.classList.remove('show'); const f=e.dataTransfer.files[0]; if(!f)return;
   const r=new FileReader(); r.onload=()=>loadText(r.result); r.readAsText(f); });
-function boot(){ sizeSvg(); buildSample(); render(); fitRail(); }
+function boot(){ sizeSvg(); buildSample(); render(); fitRail(); restore(); }
 if(document.readyState==='loading') window.addEventListener('DOMContentLoaded',boot); else boot();
 window.addEventListener('load',()=>{ sizeSvg(); fitRail(); });   // 完全表示後に再フィット(Android対策)
 window.addEventListener('resize',()=>{ sizeSvg(); applyScale(); });
