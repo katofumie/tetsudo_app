@@ -16,9 +16,9 @@
     font-family:-apple-system,"Hiragino Kaku Gothic ProN","Noto Sans JP",system-ui,sans-serif; color:var(--ink); }
   #wrap{ position:absolute; inset:0; }
   svg{ width:100%; height:100%; display:block; background:var(--paper); touch-action:none; }
-  .seg{ fill:none; stroke:var(--off); stroke-width:2.4; stroke-linecap:round; stroke-linejoin:round;
+  .seg{ fill:none; stroke-width:2.4; stroke-linecap:round; stroke-linejoin:round;
     vector-effect:non-scaling-stroke; pointer-events:none; transition:stroke .4s ease; }
-  .seg.on{ stroke:var(--on); stroke-width:4; }
+  .seg.on{ stroke:var(--on)!important; stroke-width:4.2; }
   .hit{ fill:none; stroke:transparent; stroke-width:18; vector-effect:non-scaling-stroke;
     stroke-linecap:round; pointer-events:stroke; cursor:pointer; }
   .stn{ fill:#fff; stroke:#5b6b7a; stroke-width:1.6; vector-effect:non-scaling-stroke; cursor:pointer; }
@@ -29,6 +29,7 @@
   text{ paint-order:stroke; stroke:var(--paper); stroke-width:2.6; stroke-linejoin:round;
     vector-effect:non-scaling-stroke; }
   .lbl{ fill:var(--ink); font-weight:600; pointer-events:none; }
+  .linelbl{ font-weight:800; pointer-events:none; }
   .preflbl{ fill:var(--pref); font-weight:800; letter-spacing:.06em; pointer-events:none; }
   .poilbl{ fill:#5a6b59; font-weight:700; pointer-events:none; }
   .hud{ position:absolute; top:10px; left:10px; right:10px; z-index:2; display:flex; gap:8px;
@@ -56,7 +57,7 @@
 <body>
 <div id="wrap">
   <svg id="svg" xmlns="http://www.w3.org/2000/svg">
-    <g id="gPref"></g><g id="gHit"></g><g id="gSeg"></g>
+    <g id="gPref"></g><g id="gHit"></g><g id="gSeg"></g><g id="gLine"></g>
     <g id="gPoi"></g><g id="gPoiLbl"></g><g id="gStn"></g><g id="gLbl"></g>
   </svg>
 </div>
@@ -96,7 +97,7 @@
 <script>
 // ===== サンプル鉄道（概略座標）。引くと網に見えるよう放射状 =====
 const LINES = [
-  { name:'山手線', loop:true, stations:[
+  { name:'山手線', color:'#c0a02f', loop:true, stations:[
     ['東京',35.681,139.767],['神田',35.692,139.771],['秋葉原',35.698,139.773],['御徒町',35.707,139.774],
     ['上野',35.714,139.777],['鶯谷',35.721,139.778],['日暮里',35.728,139.771],['西日暮里',35.732,139.767],
     ['田端',35.738,139.761],['駒込',35.736,139.748],['巣鴨',35.733,139.739],['大塚',35.731,139.728],
@@ -104,13 +105,13 @@ const LINES = [
     ['新宿',35.690,139.700],['代々木',35.683,139.702],['原宿',35.670,139.702],['渋谷',35.658,139.701],
     ['恵比寿',35.646,139.710],['目黒',35.633,139.715],['五反田',35.626,139.723],['大崎',35.619,139.728],
     ['品川',35.628,139.738],['田町',35.645,139.747],['浜松町',35.655,139.756],['新橋',35.666,139.758],['有楽町',35.675,139.763] ] },
-  { name:'中央線', stations:[
+  { name:'中央線', color:'#d9784a', stations:[
     ['東京',35.681,139.767],['御茶ノ水',35.699,139.765],['四ツ谷',35.686,139.730],['新宿',35.690,139.700],
     ['中野',35.706,139.666],['高円寺',35.705,139.650],['阿佐ケ谷',35.705,139.636],['荻窪',35.704,139.620],
     ['吉祥寺',35.703,139.580],['三鷹',35.702,139.560] ] },
-  { name:'北方面', stations:[
+  { name:'京浜東北線(北)', color:'#4f8fd6', stations:[
     ['田端',35.738,139.761],['赤羽',35.778,139.721],['川口',35.807,139.724],['浦和',35.858,139.657],['大宮',35.906,139.624] ] },
-  { name:'南方面', stations:[
+  { name:'東海道線(南)', color:'#2fa39a', stations:[
     ['品川',35.628,139.738],['川崎',35.531,139.697],['横浜',35.466,139.622] ] },
 ];
 
@@ -136,12 +137,18 @@ const POIS=[
 ['富士山',35.36,138.73,'s'],['河口湖',35.51,138.76,'s'],['江ノ島',35.30,139.48,'s'],['偕楽園',36.37,140.45,'s'],
 ['成田山',35.79,140.32,'s'],['軽井沢',36.35,138.63,'s'],['秩父',35.99,139.08,'s'],['スカイツリー',35.71,139.81,'s'],
 ['京都',35.01,135.77,'s'],['大阪城',34.69,135.53,'s'],['札幌',43.06,141.35,'s'],['函館',41.77,140.73,'s'],
-['仙台',38.27,140.87,'s'],['金沢',36.56,136.66,'s'],['広島',34.40,132.46,'s'],['姫路城',34.84,134.69,'s']];
+['仙台',38.27,140.87,'s'],['金沢',36.56,136.66,'s'],['広島',34.40,132.46,'s'],['姫路城',34.84,134.69,'s'],
+['浅草',35.715,139.797,'s'],['お台場',35.627,139.776,'s'],['横浜中華街',35.443,139.645,'s'],['みなとみらい',35.457,139.632,'s'],
+['長瀞',36.10,139.11,'s'],['榛名湖',36.48,138.86,'s'],['尾瀬',36.91,139.30,'s'],['富岡製糸場',36.25,138.89,'s'],
+['鋸山',35.16,139.82,'s'],['銚子',35.73,140.83,'s'],['筑波山',36.22,140.10,'s'],['中禅寺湖',36.73,139.48,'s'],
+['上高地',36.25,137.63,'s'],['奈良公園',34.685,135.84,'s'],['宮島',34.30,132.32,'s'],['伊勢神宮',34.46,136.73,'s'],
+['城崎温泉',35.62,134.81,'o'],['黒川温泉',33.09,131.14,'o'],['銀山温泉',38.58,140.53,'o'],['乳頭温泉',39.79,140.80,'o'],
+['下呂温泉',35.81,137.24,'o'],['和倉温泉',37.08,136.94,'o'],['指宿温泉',31.22,130.63,'o'],['蔵王温泉',38.17,140.40,'o']];
 
 const LAT0=35.7, KX=Math.cos(LAT0*Math.PI/180);
 const px=(lng,lat)=>[ lng*KX, -lat ];
 const svg=document.getElementById('svg');
-const gPref=g('gPref'),gHit=g('gHit'),gSeg=g('gSeg'),gPoi=g('gPoi'),gPoiLbl=g('gPoiLbl'),gStn=g('gStn'),gLbl=g('gLbl');
+const gPref=g('gPref'),gHit=g('gHit'),gSeg=g('gSeg'),gLine=g('gLine'),gPoi=g('gPoi'),gPoiLbl=g('gPoiLbl'),gStn=g('gStn'),gLbl=g('gLbl');
 function g(id){return document.getElementById(id);}
 const NS='http://www.w3.org/2000/svg';
 const mk=(t,a,txt)=>{const e=document.createElementNS(NS,t);for(const k in a)e.setAttribute(k,a[k]); if(txt!=null)e.textContent=txt; return e;};
@@ -150,31 +157,39 @@ function hav(a,b){ const R=6371,r=x=>x*Math.PI/180; const dla=r(b.lat-a.lat),dlo
 function vibrate(p){ if(navigator.vibrate){ try{navigator.vibrate(p);}catch(e){} } }
 function toast(m){ const t=g('toast'); t.textContent=m; t.classList.add('show'); clearTimeout(t._t); t._t=setTimeout(()=>t.classList.remove('show'),1100); }
 
-let segs=[], stns=[], showStations=true;
+let segs=[], stns=[], lineLbls=[], showStations=true;
 
 function buildSample(){
-  segs=[]; stns=[]; showStations=true; const seen=new Map(); let sid=0;
+  segs=[]; stns=[]; lineLbls=[]; showStations=true; const seen=new Map(); let sid=0;
   LINES.forEach(line=>{ const L=line.stations, last=line.loop?L.length:L.length-1;
     L.forEach(st=>{ if(!seen.has(st[0])){ seen.set(st[0],sid);
       stns.push({id:sid,name:st[0],lat:st[1],lng:st[2],st:0,p:px(st[2],st[1])}); sid++; } });
     for(let i=0;i<last;i++){ const a=L[i], b=L[(i+1)%L.length];
-      segs.push({ id:segs.length, pts:[px(a[2],a[1]),px(b[2],b[1])], on:false, km:hav({lat:a[1],lng:a[2]},{lat:b[1],lng:b[2]}) }); }
+      segs.push({ id:segs.length, pts:[px(a[2],a[1]),px(b[2],b[1])], on:false, color:line.color,
+        km:hav({lat:a[1],lng:a[2]},{lat:b[1],lng:b[2]}) }); }
+    let sx=0,sy=0; L.forEach(s=>{sx+=s[2];sy+=s[1];});
+    lineLbls.push({name:line.name, color:line.color, p:px(sx/L.length, sy/L.length)});
   });
 }
 function buildFromGeoJSON(gj){
-  segs=[]; stns=[]; showStations=false;
+  segs=[]; stns=[]; lineLbls=[]; showStations=false; const seenN=new Set();
   const feats = gj.type==='FeatureCollection'?gj.features:(gj.type==='Feature'?[gj]:[]);
   const add=c=>{ if(c.length<2)return; const pts=c.map(p=>px(p[0],p[1])); let km=0;
     for(let i=0;i<c.length-1;i++) km+=hav({lng:c[i][0],lat:c[i][1]},{lng:c[i+1][0],lat:c[i+1][1]});
     segs.push({id:segs.length,pts,on:false,km}); };
   feats.forEach(f=>{ const gm=f.geometry; if(!gm)return;
-    if(gm.type==='LineString') add(gm.coordinates); else if(gm.type==='MultiLineString') gm.coordinates.forEach(add); });
+    if(gm.type==='LineString') add(gm.coordinates); else if(gm.type==='MultiLineString') gm.coordinates.forEach(add);
+    const nm=f.properties&&(f.properties.name||f.properties.N02_003||f.properties['路線名']);
+    if(nm && !seenN.has(nm)){ seenN.add(nm);
+      const cs=gm.type==='LineString'?gm.coordinates:(gm.type==='MultiLineString'?gm.coordinates[0]:null);
+      if(cs&&cs.length){ const m=cs[Math.floor(cs.length/2)]; lineLbls.push({name:nm,color:'#5b6b7a',p:px(m[0],m[1])}); } }
+  });
 }
 const pathd=pts=>'M'+pts.map(p=>p[0].toFixed(5)+' '+p[1].toFixed(5)).join(' L');
 const stCls=s=>['',' pass',' off',' stay'][s];
 
 function render(){
-  [gPref,gHit,gSeg,gPoi,gPoiLbl,gStn,gLbl].forEach(x=>x.innerHTML='');
+  [gPref,gHit,gSeg,gLine,gPoi,gPoiLbl,gStn,gLbl].forEach(x=>x.innerHTML='');
   // 県名
   PREFS.forEach(p=>{ const c=px(p[2],p[1]); gPref.appendChild(mk('text',{x:c[0],y:c[1],'text-anchor':'middle',class:'preflbl'},p[0])); });
   // 温泉・観光
@@ -182,8 +197,10 @@ function render(){
     gPoi.appendChild(mk('circle',{cx:c[0],cy:c[1],r:0.003,fill:col,stroke:'#fff','stroke-width':1.4,class:'poi'}));
     gPoiLbl.appendChild(mk('text',{x:c[0],y:c[1]-0.006,'text-anchor':'middle',class:'poilbl'},(p[3]==='o'?'♨':'')+p[0])); });
   // 鉄道
-  segs.forEach(s=>{ gSeg.appendChild(mk('path',{d:pathd(s.pts),class:'seg'+(s.on?' on':''),'data-seg':s.id}));
+  segs.forEach(s=>{ gSeg.appendChild(mk('path',{d:pathd(s.pts),class:'seg'+(s.on?' on':''),stroke:s.color||'var(--off)','data-seg':s.id}));
     gHit.appendChild(mk('path',{d:pathd(s.pts),class:'hit','data-seg':s.id})); });
+  // 路線名
+  lineLbls.forEach(l=> gLine.appendChild(mk('text',{x:l.p[0],y:l.p[1],'text-anchor':'middle',class:'linelbl',fill:l.color},l.name)));
   if(showStations) stns.forEach(s=>{ gStn.appendChild(mk('circle',{cx:s.p[0],cy:s.p[1],r:0.004,class:'stn'+stCls(s.st),'data-stn':s.id}));
     gLbl.appendChild(mk('text',{x:s.p[0],y:s.p[1]-0.006,'text-anchor':'middle',class:'lbl'},s.name)); });
   g('segT').textContent=segs.length; g('stnT').textContent=showStations?stns.length:0;
@@ -204,8 +221,10 @@ function fitJapan(){ const xs=[],ys=[]; PREFS.forEach(p=>{const c=px(p[2],p[1]);
 function applyScale(){
   svg.setAttribute('viewBox', `${vb.x} ${vb.y} ${vb.w} ${vb.h}`);
   const s=vb.w/svg.clientWidth;
-  gLbl.setAttribute('font-size',10*s); gPoiLbl.setAttribute('font-size',9.5*s); gPref.setAttribute('font-size',15*s);
+  gLbl.setAttribute('font-size',10*s); gPoiLbl.setAttribute('font-size',9.5*s);
+  gPref.setAttribute('font-size',15*s); gLine.setAttribute('font-size',12*s);
   gLbl.style.display   =(showStations && s<=0.00022)?'':'none';
+  gLine.style.display  =(s<=0.00075 && s>=0.00009)?'':'none';
   gPoiLbl.style.display=(s<=0.00045)?'':'none';
   gPoi.style.display   =(s<=0.0011)?'':'none';
   gPref.style.display  =(s>=0.00011)?'':'none';
