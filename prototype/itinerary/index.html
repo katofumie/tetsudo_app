@@ -109,6 +109,8 @@ function newLeg(){ return {fromStn:'',depTime:'',toStn:'',arrTime:'',train:'',se
 function newItem(k){ return {kind:k||'食事',name:'',place:'',time:'',memo:'',photos:[]}; }
 function newDay(){ return {date:'',label:'',noTravel:false,legs:[],items:[]}; }
 function nextDate(ymd){ if(!/^\d{4}-\d{2}-\d{2}$/.test(ymd||'')) return ''; const d=new Date(ymd+'T00:00:00'); d.setDate(d.getDate()+1); const p=n=>String(n).padStart(2,'0'); return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate()); }
+// di より前で「最後に到着した駅」を返す(発駅の自動補完用)
+function prevArrival(t,di){ for(let i=Math.min(di,t.days.length)-1;i>=0;i--){ const lg=t.days[i].legs; if(lg&&lg.length) return lg[lg.length-1].toStn||''; } return ''; }
 function newTrip(){ return {id:uid(),title:'新しい旅程',start:'',end:'',days:[newDay()]}; }
 
 // ===== 時間計算 =====
@@ -252,9 +254,11 @@ g('main').addEventListener('change', e=>{ const el=e.target;
 // ===== クリック(追加・削除) =====
 g('main').addEventListener('click', e=>{ const el=e.target.closest('[data-act]'); if(!el) return; const a=el.dataset.act, t=trips[cur];
   const di=+el.dataset.d;
-  if(a==='addday'){ const last=t.days[t.days.length-1]; const nd=newDay(); nd.date=nextDate(last&&last.date); t.days.push(nd); }
+  if(a==='addday'){ const last=t.days[t.days.length-1]; const nd=newDay(); nd.date=nextDate(last&&last.date);
+    const lg=newLeg(); lg.fromStn=prevArrival(t,t.days.length); nd.legs.push(lg); t.days.push(nd); }
   else if(a==='delday'){ if(confirm('この日を削除しますか？')) t.days.splice(di,1); else return; }
-  else if(a==='addleg'){ t.days[di].legs.push(newLeg()); }
+  else if(a==='addleg'){ const day=t.days[di]; const lg=newLeg();
+    lg.fromStn = day.legs.length ? (day.legs[day.legs.length-1].toStn||'') : prevArrival(t,di); day.legs.push(lg); }
   else if(a==='delleg'){ t.days[di].legs.splice(+el.dataset.l,1); }
   else if(a==='additem'){ t.days[di].items.push(newItem()); }
   else if(a==='delitem'){ t.days[di].items.splice(+el.dataset.i,1); }
