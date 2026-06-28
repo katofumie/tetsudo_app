@@ -26,6 +26,7 @@
   .stn.off{ fill:var(--get); stroke:var(--on2); }
   .stn.stay{ fill:var(--stay); stroke:#c77f10; }
   .poi{ vector-effect:non-scaling-stroke; }
+  .border{ fill:#eef2f3; stroke:#c2cdd6; stroke-width:1; vector-effect:non-scaling-stroke; pointer-events:none; }
   text{ paint-order:stroke; stroke:var(--paper); stroke-width:2.6; stroke-linejoin:round;
     vector-effect:non-scaling-stroke; }
   .lbl{ fill:var(--ink); font-weight:600; pointer-events:none; }
@@ -57,7 +58,7 @@
 <body>
 <div id="wrap">
   <svg id="svg" xmlns="http://www.w3.org/2000/svg">
-    <g id="gPref"></g><g id="gHit"></g><g id="gSeg"></g><g id="gLine"></g>
+    <g id="gBorder"></g><g id="gPref"></g><g id="gHit"></g><g id="gSeg"></g><g id="gLine"></g>
     <g id="gPoi"></g><g id="gPoiLbl"></g><g id="gStn"></g><g id="gLbl"></g>
   </svg>
 </div>
@@ -151,7 +152,7 @@ const svg=document.getElementById('svg');
 const VW=()=>window.innerWidth||document.documentElement.clientWidth||800;
 const VH=()=>window.innerHeight||document.documentElement.clientHeight||600;
 function sizeSvg(){ svg.style.width=VW()+'px'; svg.style.height=VH()+'px'; }
-const gPref=g('gPref'),gHit=g('gHit'),gSeg=g('gSeg'),gLine=g('gLine'),gPoi=g('gPoi'),gPoiLbl=g('gPoiLbl'),gStn=g('gStn'),gLbl=g('gLbl');
+const gBorder=g('gBorder'),gPref=g('gPref'),gHit=g('gHit'),gSeg=g('gSeg'),gLine=g('gLine'),gPoi=g('gPoi'),gPoiLbl=g('gPoiLbl'),gStn=g('gStn'),gLbl=g('gLbl');
 function g(id){return document.getElementById(id);}
 const NS='http://www.w3.org/2000/svg';
 const mk=(t,a,txt)=>{const e=document.createElementNS(NS,t);for(const k in a)e.setAttribute(k,a[k]); if(txt!=null)e.textContent=txt; return e;};
@@ -160,7 +161,8 @@ function hav(a,b){ const R=6371,r=x=>x*Math.PI/180; const dla=r(b.lat-a.lat),dlo
 function vibrate(p){ if(navigator.vibrate){ try{navigator.vibrate(p);}catch(e){} } }
 function toast(m){ const t=g('toast'); t.textContent=m; t.classList.add('show'); clearTimeout(t._t); t._t=setTimeout(()=>t.classList.remove('show'),1100); }
 
-let segs=[], stns=[], lineLbls=[], showStations=true;
+let segs=[], stns=[], lineLbls=[], borders=[], showStations=true;
+let spots=POIS.map(p=>({name:p[0],lat:p[1],lng:p[2],type:p[3]}));
 
 function buildSample(){
   segs=[]; stns=[]; lineLbls=[]; showStations=true; const seen=new Map(); let sid=0;
@@ -174,31 +176,59 @@ function buildSample(){
     lineLbls.push({name:line.name, color:line.color, p:px(sx/L.length, sy/L.length)});
   });
 }
-function buildFromGeoJSON(gj){
+// 種類別ローダ：線=路線 / 面=県境 / 点=スポット
+function setRail(lineFeats){
   segs=[]; stns=[]; lineLbls=[]; showStations=false; const seenN=new Set();
-  const feats = gj.type==='FeatureCollection'?gj.features:(gj.type==='Feature'?[gj]:[]);
-  const add=c=>{ if(c.length<2)return; const pts=c.map(p=>px(p[0],p[1])); let km=0;
+  const add=(c,color)=>{ if(c.length<2)return; const pts=c.map(p=>px(p[0],p[1])); let km=0;
     for(let i=0;i<c.length-1;i++) km+=hav({lng:c[i][0],lat:c[i][1]},{lng:c[i+1][0],lat:c[i+1][1]});
-    segs.push({id:segs.length,pts,on:false,km}); };
-  feats.forEach(f=>{ const gm=f.geometry; if(!gm)return;
-    if(gm.type==='LineString') add(gm.coordinates); else if(gm.type==='MultiLineString') gm.coordinates.forEach(add);
+    segs.push({id:segs.length,pts,on:false,km,color:color||'var(--off)'}); };
+  lineFeats.forEach(f=>{ const gm=f.geometry; if(!gm)return;
+    const col=(f.properties&&f.properties.color)||null;
+    if(gm.type==='LineString') add(gm.coordinates,col); else if(gm.type==='MultiLineString') gm.coordinates.forEach(c=>add(c,col));
     const nm=f.properties&&(f.properties.name||f.properties.N02_003||f.properties['路線名']);
     if(nm && !seenN.has(nm)){ seenN.add(nm);
       const cs=gm.type==='LineString'?gm.coordinates:(gm.type==='MultiLineString'?gm.coordinates[0]:null);
-      if(cs&&cs.length){ const m=cs[Math.floor(cs.length/2)]; lineLbls.push({name:nm,color:'#5b6b7a',p:px(m[0],m[1])}); } }
+      if(cs&&cs.length){ const m=cs[Math.floor(cs.length/2)]; lineLbls.push({name:nm,color:col||'#5b6b7a',p:px(m[0],m[1])}); } }
   });
+}
+function setBorders(polyFeats){
+  borders=[];
+  polyFeats.forEach(f=>{ const gm=f.geometry; if(!gm)return;
+    const polys = gm.type==='Polygon'?[gm.coordinates] : gm.type==='MultiPolygon'?gm.coordinates : [];
+    polys.forEach(rings=> rings.forEach(ring=>{ if(ring.length<3)return;
+      borders.push('M'+ring.map(c=>{const p=px(c[0],c[1]);return p[0].toFixed(5)+' '+p[1].toFixed(5);}).join(' L')+'Z'); }));
+  });
+}
+function setSpots(pointFeats){
+  spots = pointFeats.map(f=>{ const c=f.geometry.coordinates, p=f.properties||{};
+    const name=p.name||p.NAME||p['名称']||p['名前']||''; let t=p.type||p.category||'';
+    t=(t==='o'||/温泉|湯/.test(name))?'o':'s'; return {name, lat:c[1], lng:c[0], type:t}; }).filter(s=>s.name);
+}
+function routeGeoJSON(gj){
+  const feats = gj.type==='FeatureCollection'?gj.features:(gj.type==='Feature'?[gj]:[]);
+  const lines=feats.filter(f=>f.geometry&&/LineString/.test(f.geometry.type));
+  const polys=feats.filter(f=>f.geometry&&/Polygon/.test(f.geometry.type));
+  const pts  =feats.filter(f=>f.geometry&&f.geometry.type==='Point');
+  const msg=[];
+  if(lines.length){ setRail(lines); msg.push(segs.length+'区間'); }
+  if(polys.length){ setBorders(polys); msg.push(borders.length+'境界'); }
+  if(pts.length){ setSpots(pts); msg.push(spots.length+'スポット'); }
+  render(); if(lines.length) fitRail();
+  toast('読込: '+(msg.join(' / ')||'対象なし'));
 }
 const pathd=pts=>'M'+pts.map(p=>p[0].toFixed(5)+' '+p[1].toFixed(5)).join(' L');
 const stCls=s=>['',' pass',' off',' stay'][s];
 
 function render(){
-  [gPref,gHit,gSeg,gLine,gPoi,gPoiLbl,gStn,gLbl].forEach(x=>x.innerHTML='');
+  [gBorder,gPref,gHit,gSeg,gLine,gPoi,gPoiLbl,gStn,gLbl].forEach(x=>x.innerHTML='');
+  // 県境(面)
+  borders.forEach(d=> gBorder.appendChild(mk('path',{d,class:'border'})));
   // 県名
   PREFS.forEach(p=>{ const c=px(p[2],p[1]); gPref.appendChild(mk('text',{x:c[0],y:c[1],'text-anchor':'middle',class:'preflbl'},p[0])); });
   // 温泉・観光
-  POIS.forEach(p=>{ const c=px(p[2],p[1]); const col=p[3]==='o'?'var(--onsen)':'var(--spot)';
+  spots.forEach(p=>{ const c=px(p.lng,p.lat); const col=p.type==='o'?'var(--onsen)':'var(--spot)';
     gPoi.appendChild(mk('circle',{cx:c[0],cy:c[1],r:0.003,fill:col,stroke:'#fff','stroke-width':1.4,class:'poi'}));
-    gPoiLbl.appendChild(mk('text',{x:c[0],y:c[1]-0.006,'text-anchor':'middle',class:'poilbl'},(p[3]==='o'?'♨':'')+p[0])); });
+    gPoiLbl.appendChild(mk('text',{x:c[0],y:c[1]-0.006,'text-anchor':'middle',class:'poilbl'},(p.type==='o'?'♨':'')+p.name)); });
   // 鉄道
   segs.forEach(s=>{ gSeg.appendChild(mk('path',{d:pathd(s.pts),class:'seg'+(s.on?' on':''),stroke:s.color||'var(--off)','data-seg':s.id}));
     gHit.appendChild(mk('path',{d:pathd(s.pts),class:'hit','data-seg':s.id})); });
@@ -272,7 +302,7 @@ function update(milestone){
 g('reset').addEventListener('click',()=>{ segs.forEach(s=>s.on=false); stns.forEach(s=>s.st=0); render(); toast('リセットしました'); });
 g('fit').addEventListener('click',fitRail);
 g('japan').addEventListener('click',fitJapan);
-function loadText(t){ try{ buildFromGeoJSON(JSON.parse(t)); render(); fitRail(); toast('実データ読込: '+segs.length+'区間'); }catch(e){ toast('GeoJSON解析に失敗'); } }
+function loadText(t){ try{ routeGeoJSON(JSON.parse(t)); }catch(e){ toast('GeoJSON解析に失敗'); } }
 g('file').addEventListener('change',e=>{ const f=e.target.files[0]; if(!f)return; const r=new FileReader(); r.onload=()=>loadText(r.result); r.readAsText(f); });
 const drop=g('drop');
 ['dragenter','dragover'].forEach(ev=>document.addEventListener(ev,e=>{e.preventDefault();drop.classList.add('show');}));

@@ -1,0 +1,8 @@
+node_modules/
+*.geojson
+*.zip
+*.shp
+*.dbf
+*.shx
+*.prj
+work/
