@@ -226,7 +226,7 @@ function applyScale(){
   const s=vb.w/VW();
   gLbl.setAttribute('font-size',10*s); gPoiLbl.setAttribute('font-size',9.5*s);
   gPref.setAttribute('font-size',15*s); gLine.setAttribute('font-size',12*s);
-  gLbl.style.display   =(showStations && s<=0.00022)?'':'none';
+  gLbl.style.display   =(showStations && s<=0.00042)?'':'none';
   gLine.style.display  =(s<=0.00075 && s>=0.00009)?'':'none';
   gPoiLbl.style.display=(s<=0.00045)?'':'none';
   gPoi.style.display   =(s<=0.0011)?'':'none';
