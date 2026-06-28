@@ -31,7 +31,7 @@
   .linelbl{ font-weight:800; pointer-events:none; }
   .preflbl{ fill:var(--pref); font-weight:800; letter-spacing:.06em; pointer-events:none; }
   .poilbl{ fill:#5a6b59; font-weight:700; pointer-events:none; }
-  .hud{ position:absolute; top:10px; left:10px; right:10px; z-index:2; display:flex; gap:8px;
+  .hud{ position:absolute; top:54px; left:10px; right:10px; z-index:2; display:flex; gap:8px;
     background:rgba(255,255,255,.86); border-radius:14px; padding:9px 10px; box-shadow:0 2px 10px rgba(0,0,0,.08); }
   .hud .cell{ flex:1; text-align:center; } .hud .label{ font-size:10px; color:var(--muted); }
   .hud .val{ font-size:18px; font-weight:800; font-variant-numeric:tabular-nums; }
@@ -47,6 +47,9 @@
   .legend{ display:flex; gap:12px; flex-wrap:wrap; margin-top:7px; color:var(--muted); }
   .legend i{ width:10px; height:10px; border-radius:50%; display:inline-block; vertical-align:middle; margin-right:4px; }
   .hint{ color:var(--muted); margin-top:6px; line-height:1.5; }
+  .navtoggle{ position:absolute; top:10px; left:10px; z-index:6; display:inline-flex; background:#fff; border:1px solid #cdd6dd; border-radius:18px; overflow:hidden; box-shadow:0 2px 8px rgba(0,0,0,.12); }
+  .navtoggle a{ text-decoration:none; color:#37454f; font-size:12px; font-weight:800; padding:7px 13px; }
+  .navtoggle a.active{ background:var(--on); color:#fff; }
   .zoom{ position:absolute; right:12px; bottom:128px; z-index:3; display:flex; flex-direction:column; gap:7px; }
   .zoom button{ width:44px; height:44px; border-radius:50%; border:1px solid #cdd6dd; background:rgba(255,255,255,.94);
     font-size:24px; font-weight:700; color:var(--ink); box-shadow:0 2px 8px rgba(0,0,0,.14); cursor:pointer; line-height:1; padding:0; }
@@ -70,6 +73,11 @@
   </svg>
 </div>
 
+<div class="navtoggle">
+  <a class="active">🗺 地図</a>
+  <a href="../itinerary/">📖 しおり</a>
+</div>
+
 <div class="hud">
   <div class="cell"><div class="label">乗りつぶし率</div><div class="val" id="rate">0<small>%</small></div></div>
   <div class="cell"><div class="label">区間</div><div class="val"><span id="segN">0</span><small>/<span id="segT">0</span></small></div></div>
@@ -85,7 +93,6 @@
     <button id="home">ホーム</button>
     <button id="clear">塗り消去</button>
     <button id="sample">サンプル</button>
-    <a class="fake" href="../itinerary/" style="text-decoration:none">📖 しおり</a>
     <label class="fake" style="margin-left:auto;">📁
       <input id="file" type="file" accept=".geojson,.json,application/geo+json" style="display:none"></label>
   </div>

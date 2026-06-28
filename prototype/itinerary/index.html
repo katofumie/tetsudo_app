@@ -13,8 +13,9 @@
   header{ position:sticky; top:0; z-index:5; background:#fff; border-bottom:1px solid var(--line);
     display:flex; gap:8px; align-items:center; padding:9px 12px; flex-wrap:wrap; }
   header h1{ font-size:15px; margin:0; }
-  header a.nav{ text-decoration:none; color:var(--ink); background:var(--bg); border:1px solid var(--line);
-    border-radius:16px; padding:5px 11px; font-size:12px; font-weight:700; }
+  .navtoggle{ display:inline-flex; background:#fff; border:1px solid var(--line); border-radius:18px; overflow:hidden; box-shadow:0 1px 4px rgba(0,0,0,.1); }
+  .navtoggle a{ text-decoration:none; color:var(--ink); font-size:12px; font-weight:800; padding:7px 13px; }
+  .navtoggle a.active{ background:var(--accent); color:#fff; }
   select,input,textarea,button{ font-family:inherit; font-size:14px; color:var(--ink); }
   select#tripSel{ padding:6px 8px; border:1px solid var(--line); border-radius:8px; background:#fff; max-width:48vw; }
   .btn{ background:var(--bg); border:1px solid var(--line); border-radius:16px; padding:6px 11px; font-size:12px; font-weight:700; cursor:pointer; }
@@ -80,8 +81,10 @@
 </head>
 <body>
 <header>
-  <h1>📖 旅のしおり</h1>
-  <a class="nav" href="../atlas/">🗺 地図</a>
+  <div class="navtoggle">
+    <a href="../atlas/">🗺 地図</a>
+    <a class="active">📖 しおり</a>
+  </div>
   <select id="tripSel"></select>
   <button class="btn" id="newTrip">＋新規旅程</button>
   <button class="btn" id="saveBtn" style="margin-left:auto">💾 保存</button>
