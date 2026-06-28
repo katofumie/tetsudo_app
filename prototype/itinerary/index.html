@@ -292,10 +292,18 @@ g('tripSel').addEventListener('change', e=>{ cur=+e.target.value; render(); });
 g('newTrip').addEventListener('click', ()=>{ trips.push(newTrip()); cur=trips.length-1; renderShell(); render(); save(); });
 g('saveBtn').addEventListener('click', async()=>{ setStatus('保存中…'); await idbSet('trips',trips); setStatus('✓ 保存しました'); });
 
+// 旧・日単位の昼/夜/宿フィールドを予定(item)へ移行(データ保全)
+function migrate(){ trips.forEach(t=>(t.days||[]).forEach(d=>{ d.items=d.items||[];
+  const add=(k,v)=>{ if(v && !d.items.some(x=>x.kind===k)){ const it=newItem(k); it.name=v; d.items.push(it); } };
+  if(d.lunch){ add('昼ご飯',d.lunch); delete d.lunch; }
+  if(d.dinner){ add('夜ご飯',d.dinner); delete d.dinner; }
+  if(d.hotel){ add('宿泊',d.hotel); delete d.hotel; }
+})); }
 (async function boot(){
   const saved=await idbGet('trips');
   trips = (Array.isArray(saved)&&saved.length)? saved : [newTrip()];
-  cur=0; renderShell(); render();
+  migrate();
+  cur=0; renderShell(); render(); save();
 })();
 </script>
 </body>
