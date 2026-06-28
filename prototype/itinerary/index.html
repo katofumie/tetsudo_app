@@ -70,13 +70,8 @@
   .ov-area .ttl{ font-size:11px; color:var(--muted); font-weight:800; padding:9px 12px 2px; letter-spacing:.05em; background:#fbfaf5; border-bottom:1px solid var(--line); }
   .ov-day{ border-top:1px solid #f1ede2; }
   .ov-day:first-of-type{ border-top:none; }
-  .ov-day-lbl{ font-size:12px; font-weight:800; color:var(--ink); padding:8px 12px 0; }
-  .ov-body{ display:flex; flex-wrap:wrap; align-items:flex-start; gap:6px; }
-  .ov-flow{ flex:1 1 300px; min-width:0; }
-  .ov-meals{ flex:0 1 230px; display:flex; flex-direction:column; gap:4px; padding:6px 12px 8px; }
-  .ovm{ display:flex; align-items:center; gap:6px; background:#fbfaf5; border:1px solid var(--line); border-radius:8px; padding:3px 8px; }
-  .ovm-ic{ font-size:13px; } .ovm-lb{ font-size:11px; color:var(--muted); font-weight:800; width:15px; }
-  .ovm input{ flex:1; border:none; background:transparent; font-size:13px; min-width:50px; outline:none; color:var(--ink); }
+  .ov-day-lbl{ font-size:12px; font-weight:800; color:var(--ink); padding:8px 12px 0; display:flex; justify-content:space-between; align-items:baseline; gap:10px; }
+  .ov-meals2{ font-size:10.5px; color:#6f8f5a; font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:55%; }
   /* 横並びサマリー(1日の移動を一望) */
   .overview{ display:flex; align-items:stretch; overflow-x:auto; padding:6px 12px 10px; -webkit-overflow-scrolling:touch; }
   .ov-stn{ flex:0 0 auto; text-align:center; min-width:62px; padding:0 4px; display:flex; flex-direction:column; justify-content:center; }
@@ -117,7 +112,7 @@ function uid(){ return Date.now().toString(36)+Math.floor(Math.random()*1e4).toS
 
 function newLeg(){ return {fromStn:'',depTime:'',toStn:'',arrTime:'',train:'',seat:'',memo:'',photos:[]}; }
 function newItem(k){ return {kind:k||'食事',name:'',place:'',time:'',memo:'',photos:[]}; }
-function newDay(){ return {date:'',label:'',noTravel:false,lunch:'',dinner:'',hotel:'',legs:[],items:[]}; }
+function newDay(){ return {date:'',label:'',noTravel:false,legs:[],items:[]}; }
 function nextDate(ymd){ if(!/^\d{4}-\d{2}-\d{2}$/.test(ymd||'')) return ''; const d=new Date(ymd+'T00:00:00'); d.setDate(d.getDate()+1); const p=n=>String(n).padStart(2,'0'); return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate()); }
 function fmtJDate(ymd){ if(!/^\d{4}-\d{2}-\d{2}$/.test(ymd||'')) return ''; const d=new Date(ymd+'T00:00:00'); const w='日月火水木金土'[d.getDay()]; return (d.getMonth()+1)+'月'+d.getDate()+'日('+w+')'; }
 // di より前で「最後に到着した駅」を返す(発駅の自動補完用)
@@ -131,7 +126,10 @@ function fmtDur(min){ if(min==null||min<0) return '—'; const h=Math.floor(min/
 const g=id=>document.getElementById(id);
 const esc=s=>(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 
-const KINDS=['食事','宿泊','観光','寄り道','その他'];
+const KINDS=['昼ご飯','夜ご飯','宿泊','観光','寄り道','その他'];
+// 予定から昼/夜を取り出してサマリー用に
+function mealsSummary(d){ const f=k=>{ const it=(d.items||[]).find(x=>x.kind===k&&x.name); return it?it.name:''; };
+  const l=f('昼ご飯'), n=f('夜ご飯'); const p=[]; if(l)p.push('🍱'+l); if(n)p.push('🌙'+n); return p.join('　'); }
 
 function renderShell(){
   const sel=g('tripSel'); sel.innerHTML='';
@@ -186,15 +184,7 @@ function render(){
   // 独立した行程サマリー領域(タイトルと入力エリアの間)
   h+=`<div class="ov-area"><div class="ttl">🚃 行程サマリー</div>`;
   t.days.forEach((d,di)=>{ const dl=`Day ${di+1}${fmtJDate(d.date)?' · '+fmtJDate(d.date):''}${d.label?'　'+d.label:''}`;
-    h+=`<div class="ov-day"><div class="ov-day-lbl">${esc(dl)}</div>
-      <div class="ov-body">
-        <div class="ov-flow" id="ov-${di}">${overviewHTML(d)}</div>
-        <div class="ov-meals">
-          <div class="ovm"><span class="ovm-ic">🍱</span><span class="ovm-lb">昼</span><input data-d="${di}" data-f="lunch" value="${esc(d.lunch||'')}" placeholder="昼ごはん"></div>
-          <div class="ovm"><span class="ovm-ic">🌙</span><span class="ovm-lb">夜</span><input data-d="${di}" data-f="dinner" value="${esc(d.dinner||'')}" placeholder="夜ごはん"></div>
-          <div class="ovm"><span class="ovm-ic">🛏</span><span class="ovm-lb">宿</span><input data-d="${di}" data-f="hotel" value="${esc(d.hotel||'')}" placeholder="宿泊先"></div>
-        </div>
-      </div></div>`; });
+    h+=`<div class="ov-day"><div class="ov-day-lbl"><span>${esc(dl)}</span><span class="ov-meals2" id="ovm-${di}">${esc(mealsSummary(d))}</span></div><div id="ov-${di}">${overviewHTML(d)}</div></div>`; });
   h+=`</div>`;
   // 入力エリア
   t.days.forEach((d,di)=>{
@@ -265,7 +255,9 @@ g('main').addEventListener('input', e=>{ const el=e.target; if(!el.dataset||!el.
   if(el.type==='checkbox') return;   // チェックボックスはchangeで処理
   fieldTarget(el)[el.dataset.f]=el.value;
   if(el.dataset.f==='title') renderShell();
-  if(el.dataset.d!=null){ const w=document.getElementById('ov-'+el.dataset.d); if(w) w.innerHTML=overviewHTML(trips[cur].days[+el.dataset.d]); }  // 入力中も横並びを即時更新
+  if(el.dataset.d!=null){ const di=el.dataset.d;   // 入力中も横並び・昼夜サマリーを即時更新
+    const w=document.getElementById('ov-'+di); if(w) w.innerHTML=overviewHTML(trips[cur].days[+di]);
+    const mw=document.getElementById('ovm-'+di); if(mw) mw.textContent=mealsSummary(trips[cur].days[+di]); }
   save(); });
 // blur(change)で計算欄を更新するため再描画
 g('main').addEventListener('change', e=>{ const el=e.target;
