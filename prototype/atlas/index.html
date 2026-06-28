@@ -16,11 +16,9 @@
     font-family:-apple-system,"Hiragino Kaku Gothic ProN","Noto Sans JP",system-ui,sans-serif; color:var(--ink); }
   #wrap{ position:absolute; inset:0; }
   svg{ width:100%; height:100%; display:block; background:var(--paper); touch-action:none; }
-  .seg{ fill:none; stroke-width:2.4; stroke-linecap:round; stroke-linejoin:round;
-    vector-effect:non-scaling-stroke; pointer-events:none; transition:stroke .4s ease; }
-  .seg.on{ stroke:var(--on)!important; stroke-width:4.2; }
-  .hit{ fill:none; stroke:transparent; stroke-width:18; vector-effect:non-scaling-stroke;
-    stroke-linecap:round; pointer-events:stroke; cursor:pointer; }
+  .seg{ fill:none; stroke-width:1.3; stroke-linecap:round; stroke-linejoin:round;
+    vector-effect:non-scaling-stroke; pointer-events:stroke; cursor:pointer; }
+  .seg.on{ stroke:var(--on)!important; stroke-width:2.8; }
   .stn{ fill:#fff; stroke:#5b6b7a; stroke-width:1.6; vector-effect:non-scaling-stroke; cursor:pointer; }
   .stn.pass{ fill:var(--pass); stroke:var(--pass); }
   .stn.off{ fill:var(--get); stroke:var(--on2); }
@@ -58,7 +56,7 @@
 <body>
 <div id="wrap">
   <svg id="svg" xmlns="http://www.w3.org/2000/svg">
-    <g id="gBorder"></g><g id="gPref"></g><g id="gHit"></g><g id="gSeg"></g><g id="gLine"></g>
+    <g id="gBorder"></g><g id="gPref"></g><g id="gSeg"></g><g id="gLine"></g>
     <g id="gPoi"></g><g id="gPoiLbl"></g><g id="gStn"></g><g id="gLbl"></g>
   </svg>
 </div>
@@ -152,7 +150,7 @@ const svg=document.getElementById('svg');
 const VW=()=>window.innerWidth||document.documentElement.clientWidth||800;
 const VH=()=>window.innerHeight||document.documentElement.clientHeight||600;
 function sizeSvg(){ svg.style.width=VW()+'px'; svg.style.height=VH()+'px'; }
-const gBorder=g('gBorder'),gPref=g('gPref'),gHit=g('gHit'),gSeg=g('gSeg'),gLine=g('gLine'),gPoi=g('gPoi'),gPoiLbl=g('gPoiLbl'),gStn=g('gStn'),gLbl=g('gLbl');
+const gBorder=g('gBorder'),gPref=g('gPref'),gSeg=g('gSeg'),gLine=g('gLine'),gPoi=g('gPoi'),gPoiLbl=g('gPoiLbl'),gStn=g('gStn'),gLbl=g('gLbl');
 function g(id){return document.getElementById(id);}
 const NS='http://www.w3.org/2000/svg';
 const mk=(t,a,txt)=>{const e=document.createElementNS(NS,t);for(const k in a)e.setAttribute(k,a[k]); if(txt!=null)e.textContent=txt; return e;};
@@ -220,7 +218,7 @@ const pathd=pts=>'M'+pts.map(p=>p[0].toFixed(5)+' '+p[1].toFixed(5)).join(' L');
 const stCls=s=>['',' pass',' off',' stay'][s];
 
 function render(){
-  [gBorder,gPref,gHit,gSeg,gLine,gPoi,gPoiLbl,gStn,gLbl].forEach(x=>x.innerHTML='');
+  [gBorder,gPref,gSeg,gLine,gPoi,gPoiLbl,gStn,gLbl].forEach(x=>x.innerHTML='');
   // 県境(面)
   borders.forEach(d=> gBorder.appendChild(mk('path',{d,class:'border'})));
   // 県名
@@ -230,8 +228,7 @@ function render(){
     gPoi.appendChild(mk('circle',{cx:c[0],cy:c[1],r:0.003,fill:col,stroke:'#fff','stroke-width':1.4,class:'poi'}));
     gPoiLbl.appendChild(mk('text',{x:c[0],y:c[1]-0.006,'text-anchor':'middle',class:'poilbl'},(p.type==='o'?'♨':'')+p.name)); });
   // 鉄道
-  segs.forEach(s=>{ gSeg.appendChild(mk('path',{d:pathd(s.pts),class:'seg'+(s.on?' on':''),stroke:s.color||'var(--off)','data-seg':s.id}));
-    gHit.appendChild(mk('path',{d:pathd(s.pts),class:'hit','data-seg':s.id})); });
+  segs.forEach(s=>{ gSeg.appendChild(mk('path',{d:pathd(s.pts),class:'seg'+(s.on?' on':''),stroke:s.color||'var(--off)','data-seg':s.id})); });
   // 路線名
   lineLbls.forEach(l=> gLine.appendChild(mk('text',{x:l.p[0],y:l.p[1],'text-anchor':'middle',class:'linelbl',fill:l.color},l.name)));
   if(showStations) stns.forEach(s=>{ gStn.appendChild(mk('circle',{cx:s.p[0],cy:s.p[1],r:0.004,class:'stn'+stCls(s.st),'data-stn':s.id}));
@@ -255,7 +252,7 @@ function applyScale(){
   svg.setAttribute('viewBox', `${vb.x} ${vb.y} ${vb.w} ${vb.h}`);
   const s=vb.w/VW();
   gLbl.setAttribute('font-size',10*s); gPoiLbl.setAttribute('font-size',9.5*s);
-  gPref.setAttribute('font-size',15*s); gLine.setAttribute('font-size',12*s);
+  gPref.setAttribute('font-size',10.5*s); gLine.setAttribute('font-size',11*s);
   gLbl.style.display   =(showStations && s<=0.00042)?'':'none';
   gLine.style.display  =(s<=0.00075 && s>=0.00009)?'':'none';
   gPoiLbl.style.display=(s<=0.00045)?'':'none';
@@ -265,6 +262,10 @@ function applyScale(){
   const rp=3.0*s; gPoi.querySelectorAll('circle').forEach(c=>c.setAttribute('r',rp));
 }
 
+// パン/ズーム時の再描画をフレーム単位に間引く(重さ対策)
+let rafPending=false;
+function scheduleScale(){ if(rafPending)return; rafPending=true; requestAnimationFrame(()=>{ rafPending=false; applyScale(); }); }
+
 // ===== 入力 =====
 const ptrs=new Map(); let moved=false,startT=0,panLast=null,pinchD=0;
 function toUser(cx,cy){ const r=svg.getBoundingClientRect(); return {x:vb.x+(cx-r.left)/r.width*vb.w, y:vb.y+(cy-r.top)/r.height*vb.h}; }
@@ -272,22 +273,30 @@ svg.addEventListener('pointerdown',e=>{ svg.setPointerCapture(e.pointerId); ptrs
   if(ptrs.size===1) panLast={x:e.clientX,y:e.clientY}; else if(ptrs.size===2){ const p=[...ptrs.values()]; pinchD=Math.hypot(p[0].x-p[1].x,p[0].y-p[1].y); } });
 svg.addEventListener('pointermove',e=>{ if(!ptrs.has(e.pointerId))return; ptrs.set(e.pointerId,{x:e.clientX,y:e.clientY});
   if(ptrs.size===1&&panLast){ const dx=e.clientX-panLast.x,dy=e.clientY-panLast.y; if(Math.abs(dx)+Math.abs(dy)>4)moved=true;
-    const r=svg.getBoundingClientRect(); vb.x-=dx/r.width*vb.w; vb.y-=dy/r.height*vb.h; panLast={x:e.clientX,y:e.clientY}; applyScale(); }
+    const r=svg.getBoundingClientRect(); vb.x-=dx/r.width*vb.w; vb.y-=dy/r.height*vb.h; panLast={x:e.clientX,y:e.clientY}; scheduleScale(); }
   else if(ptrs.size===2){ moved=true; const p=[...ptrs.values()]; const d=Math.hypot(p[0].x-p[1].x,p[0].y-p[1].y);
     if(pinchD){ zoomAt(toUser((p[0].x+p[1].x)/2,(p[0].y+p[1].y)/2), pinchD/d); } pinchD=d; } });
 function endPtr(e){ const tap=ptrs.size===1&&!moved&&(Date.now()-startT)<350; ptrs.delete(e.pointerId); panLast=null; pinchD=0; if(tap) handleTap(e.clientX,e.clientY); }
 svg.addEventListener('pointerup',endPtr);
 svg.addEventListener('pointercancel',e=>{ ptrs.delete(e.pointerId); panLast=null; pinchD=0; });
 function zoomAt(u,k){ k=Math.max(0.2,Math.min(5,k)); const nw=Math.max(0.0006,Math.min(60,vb.w*k)),nh=nw*(vb.h/vb.w);
-  vb.x=u.x-(u.x-vb.x)*(nw/vb.w); vb.y=u.y-(u.y-vb.y)*(nh/vb.h); vb.w=nw; vb.h=nh; applyScale(); }
+  vb.x=u.x-(u.x-vb.x)*(nw/vb.w); vb.y=u.y-(u.y-vb.y)*(nh/vb.h); vb.w=nw; vb.h=nh; scheduleScale(); }
 svg.addEventListener('wheel',e=>{ e.preventDefault(); zoomAt(toUser(e.clientX,e.clientY), e.deltaY>0?1.15:0.87); },{passive:false});
 
-function handleTap(cx,cy){ const el=document.elementFromPoint(cx,cy); if(!el)return;
-  const stn=el.getAttribute('data-stn');
-  if(stn!=null){ const s=stns[+stn]; s.st=(s.st+1)%4; el.setAttribute('class','stn'+stCls(s.st));
+// 細い線でも当てやすいよう、近傍を少しずつ探る(当たり判定レイヤー廃止の代替)
+function pick(cx,cy){
+  const tries=[[0,0],[0,-5],[0,5],[-5,0],[5,0],[-4,-4],[4,4],[-4,4],[4,-4],[0,-10],[0,10],[-10,0],[10,0]];
+  for(const [dx,dy] of tries){ const el=document.elementFromPoint(cx+dx,cy+dy); if(!el||!el.getAttribute)continue;
+    const st=el.getAttribute('data-stn'); if(st!=null)return {stn:st};
+    const sg=el.getAttribute('data-seg'); if(sg!=null)return {seg:sg}; }
+  return null;
+}
+function handleTap(cx,cy){ const hit=pick(cx,cy); if(!hit)return;
+  if(hit.stn!=null){ const s=stns[+hit.stn]; s.st=(s.st+1)%4;
+    gStn.querySelector(`[data-stn="${hit.stn}"]`).setAttribute('class','stn'+stCls(s.st));
     vibrate(s.st===3?[25,40,25]:(s.st===0?15:30)); toast(s.name+'：'+['未訪問','通過','下車','泊まった'][s.st]); update(); return; }
-  const seg=el.getAttribute('data-seg');
-  if(seg!=null){ const s=segs[+seg]; s.on=!s.on; gSeg.querySelector(`[data-seg="${seg}"]`).setAttribute('class','seg'+(s.on?' on':''));
+  if(hit.seg!=null){ const s=segs[+hit.seg]; s.on=!s.on;
+    gSeg.querySelector(`[data-seg="${hit.seg}"]`).setAttribute('class','seg'+(s.on?' on':''));
     vibrate(s.on?35:18); update(s.on); } }
 
 function update(milestone){
