@@ -92,6 +92,7 @@
     <button id="go">🔍</button>
     <button id="home">ホーム</button>
     <button id="clear">塗り消去</button>
+    <button id="impShiori" title="しおりの行程を地図に塗り込む">📖取込</button>
     <button id="sample">サンプル</button>
     <label class="fake" style="margin-left:auto;">📁
       <input id="file" type="file" accept=".geojson,.json,application/geo+json" style="display:none"></label>
@@ -105,7 +106,8 @@
     <span><i style="background:var(--spot)"></i>観光</span>
   </div>
   <div class="hint">線=塗る／駅=通過→下車→泊まった。ドラッグ移動・ピンチ/＋−で拡大縮小。
-    検索窓に駅名・路線名を入れて移動。「ホーム」で全国表示に戻る。主要駅は引いた状態でも表示。</div>
+    検索窓に駅名・路線名を入れて移動。「ホーム」で全国表示に戻る。主要駅は引いた状態でも表示。
+    <b>📖取込</b>でしおりの行程の乗車区間を地図に自動で塗り込み（既存の塗りは残す）。</div>
 </div>
 
 <div class="zoom">
@@ -444,6 +446,96 @@ async function init(){
     render(); if(segs.length) fitRail(); toast('地図を読み込みました');
   } else { restore(); }
 }
+// ===== しおり(itinerary)連携：行程の乗車区間を地図の塗りつぶしへ反映 =====
+// 区間端点をノード、区間をエッジとする鉄道グラフを作り、しおりの発駅→着駅を
+// Dijkstraで結んで通過区間を塗る。同名遠方駅の取り違えと極端な遠回りはガードでスキップ。
+const RG={ adj:null, nodeP:null, nodeKeys:null, nameIdx:null };
+const rndKey=p=>p[0].toFixed(5)+','+p[1].toFixed(5);
+function buildRailGraph(){
+  const adj=new Map(), nodeP=new Map();
+  const addE=(a,b,id,km)=>{ if(!adj.has(a))adj.set(a,[]); adj.get(a).push([b,id,km]); };
+  for(const s of segs){ if(!s.pts||s.pts.length<2) continue;
+    const a=rndKey(s.pts[0]), b=rndKey(s.pts[s.pts.length-1]);
+    nodeP.set(a,s.pts[0]); nodeP.set(b,s.pts[s.pts.length-1]);
+    const km=s.km||0; addE(a,b,s.id,km); addE(b,a,s.id,km); }
+  RG.adj=adj; RG.nodeP=nodeP; RG.nodeKeys=[...nodeP.keys()];
+  // 駅名→候補点[] 索引（正規化名）。ルーティングは全駅点(全ホーム)を候補にする方が当たりが良い
+  // ので、間引き前の store.stations を優先（無ければ描画用 stns[] にフォールバック）。
+  const idx=new Map();
+  const add=(name,lat,lng)=>{ const n=normName(name); if(!n||lat==null||lng==null)return;
+    if(!idx.has(n))idx.set(n,[]); idx.get(n).push({name,lat,lng,p:px(lng,lat)}); };
+  const feats=store.stations&&store.stations.features;
+  if(feats&&feats.length){ feats.forEach(f=>{ if(!f.geometry||f.geometry.type!=='Point')return;
+    const c=f.geometry.coordinates, p=f.properties||{}; add(p.N02_005||p.name||p['駅名']||'', c[1], c[0]); }); }
+  else { stns.forEach(st=>add(st.name, st.lat, st.lng)); }
+  RG.nameIdx=idx;
+}
+function normName(s){ return (s||'').trim().replace(/駅$/,'').replace(/[（(].*?[)）]/g,'').trim(); }
+function nearestNode(p){ let bk=null,bd=1e18; for(const k of RG.nodeKeys){ const q=RG.nodeP.get(k);
+  const dx=q[0]-p[0],dy=q[1]-p[1],d=dx*dx+dy*dy; if(d<bd){bd=d;bk=k;} } return bk; }
+function snapNode(p){ const k=rndKey(p); return RG.adj.has(k)?k:nearestNode(p); }
+// 軽量バイナリヒープ（[優先度,値]）
+function MinHeap(){ const a=[]; return {
+  push(x){ a.push(x); let i=a.length-1; while(i>0){ const p=(i-1)>>1; if(a[p][0]<=a[i][0])break; [a[p],a[i]]=[a[i],a[p]]; i=p; } },
+  pop(){ const t=a[0], l=a.pop(); if(a.length){ a[0]=l; let i=0; for(;;){ let x=2*i+1,y=x+1,s=i;
+    if(x<a.length&&a[x][0]<a[s][0])s=x; if(y<a.length&&a[y][0]<a[s][0])s=y; if(s===i)break; [a[s],a[i]]=[a[i],a[s]]; i=s; } } return t; },
+  get size(){ return a.length; } }; }
+function routeNodes(src,dst){ if(src===dst)return {segs:[],km:0};
+  const dist=new Map([[src,0]]), prev=new Map(), h=MinHeap(); h.push([0,src]);
+  while(h.size){ const [d,u]=h.pop(); if(u===dst)break; if(d>(dist.get(u)??1e18))continue;
+    for(const [v,id,km] of (RG.adj.get(u)||[])){ const nd=d+km;
+      if(nd<(dist.get(v)??1e18)){ dist.set(v,nd); prev.set(v,[u,id]); h.push([nd,v]); } } }
+  if(!prev.has(dst))return null;
+  const out=[]; let c=dst; while(c!==src){ const p=prev.get(c); out.push(p[1]); c=p[0]; } return {segs:out.reverse(),km:dist.get(dst)}; }
+function findStns(q){ const n=normName(q); if(!n)return [];
+  if(RG.nameIdx.has(n))return RG.nameIdx.get(n);
+  const out=[]; for(const [name,arr] of RG.nameIdx){ if(name.includes(n)||n.includes(name)){ for(const c of arr){ out.push(c); if(out.length>=40)break; } } if(out.length>=40)break; } return out; }
+// 1区間(発駅名→着駅名)を解決して通過区間idを返す
+function routeLeg(fromName,toName){
+  const A=findStns(fromName), B=findStns(toName);
+  if(!A.length||!B.length) return {err:(!A.length?fromName:toName)+'：駅が見つからない'};
+  let minStraight=1e18;
+  for(const x of A)for(const y of B){ const d=hav(x,y); if(d<minStraight)minStraight=d; }
+  let best=null, bestStraight=0;
+  for(const x of A)for(const y of B){ const r=routeNodes(snapNode(x.p),snapNode(y.p));
+    if(r&&(best===null||r.km<best.km)){ best=r; bestStraight=hav(x,y); } }
+  if(!best) return {err:'経路が見つからない'};
+  if(bestStraight>minStraight*1.5+20) return {err:'別地点の同名駅の可能性（接続なし）'};
+  if(best.km>bestStraight*3+30) return {err:'遠回り（'+Math.round(best.km)+'km/直線'+Math.round(bestStraight)+'km）要確認'};
+  return {segs:best.segs, km:best.km};
+}
+// しおりDB(別オリジン内ストア)を読む
+function readShioriTrips(){ return new Promise(res=>{ if(!window.indexedDB)return res(null);
+  let req; try{ req=indexedDB.open('shiori',1); }catch(e){ return res(null); }
+  req.onupgradeneeded=()=>{ try{ if(!req.result.objectStoreNames.contains('kv')) req.result.createObjectStore('kv'); }catch(e){} };
+  req.onerror=()=>res(null);
+  req.onsuccess=()=>{ const db=req.result; if(!db.objectStoreNames.contains('kv'))return res(null);
+    try{ const tx=db.transaction('kv','readonly'); const rq=tx.objectStore('kv').get('trips');
+      rq.onsuccess=()=>res(rq.result||null); rq.onerror=()=>res(null); }catch(e){ res(null); } }; }); }
+async function importFromShiori(){
+  if(!segs.length){ toast('先に地図データを読み込んでください'); return; }
+  const trips=await readShioriTrips();
+  if(!Array.isArray(trips)||!trips.length){ toast('しおりに行程がありません'); return; }
+  const legs=[];
+  for(const t of trips){ for(const d of (t.days||[])){ if(d.noTravel) continue;
+    for(const lg of (d.legs||[])){ if(lg&&(lg.fromStn||'').trim()&&(lg.toStn||'').trim())
+      legs.push({trip:t.title||'旅程',from:lg.fromStn.trim(),to:lg.toStn.trim()}); } } }
+  if(!legs.length){ toast('しおりに発着駅つきの区間がありません'); return; }
+  if(!confirm('しおりの '+legs.length+' 区間を地図に塗り込みますか？\n（既存の塗りは消えません）')) return;
+  toast('しおりを取込中…');
+  buildRailGraph();
+  const painted=new Set(store.paint.seg||[]);
+  let okN=0, addN=0; const skipped=[];
+  for(const lg of legs){ const r=routeLeg(lg.from,lg.to);
+    if(r.err){ skipped.push(lg.from+'→'+lg.to+'：'+r.err); continue; }
+    okN++; r.segs.forEach(id=>{ if(!painted.has(id)){ painted.add(id); addN++; } if(segs[id])segs[id].on=true; }); }
+  store.paint.seg=[...painted]; saveState(); render();
+  let msg='しおり取込：'+okN+'/'+legs.length+'区間を反映（'+addN+'区間を新規塗り）';
+  toast(msg);
+  if(skipped.length) alert(msg+'\n\n反映できなかった区間（手動で確認してください）:\n'+skipped.slice(0,15).join('\n')+(skipped.length>15?('\n…ほか'+(skipped.length-15)+'件'):''));
+}
+g('impShiori').addEventListener('click',importFromShiori);
+
 function boot(){ sizeSvg(); buildSample(); render(); fitRail(); init(); }
 if(document.readyState==='loading') window.addEventListener('DOMContentLoaded',boot); else boot();
 window.addEventListener('load',()=>{ sizeSvg(); fitRail(); });   // 完全表示後に再フィット(Android対策)
