@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>乗りつぶし — 実マッププロトタイプ</title>
+<link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet" />
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<style>
+  :root{ --accent:#ff5a3c; --accent2:#ffd23c; --get:#46d39a; --muted:#8a93ab; }
+  *{ box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html,body{ margin:0; height:100%; font-family:-apple-system,"Hiragino Kaku Gothic ProN","Noto Sans JP",system-ui,sans-serif; }
+  #map{ position:absolute; inset:0; }
+  .hud{ position:absolute; top:10px; left:10px; right:10px; z-index:2; display:flex; gap:8px;
+    background:rgba(15,19,32,.82); color:#e8ecf6; border-radius:14px; padding:10px 12px; backdrop-filter:blur(6px); }
+  .hud .cell{ flex:1; text-align:center; }
+  .hud .label{ font-size:10px; color:var(--muted); }
+  .hud .val{ font-size:18px; font-weight:700; font-variant-numeric:tabular-nums; }
+  .hud .val small{ font-size:11px; color:var(--muted); font-weight:500; }
+  .pop{ animation:pop .35s ease; }
+  @keyframes pop{ 0%{transform:scale(1)} 40%{transform:scale(1.18); color:var(--accent2)} 100%{transform:scale(1)} }
+  .bar{ position:absolute; left:0; bottom:0; height:3px; background:var(--accent); width:0%; border-radius:2px; transition:width .5s cubic-bezier(.2,.8,.2,1); }
+  .panel{ position:absolute; left:10px; right:10px; bottom:10px; z-index:2;
+    background:rgba(15,19,32,.82); color:#e8ecf6; border-radius:14px; padding:10px 12px; backdrop-filter:blur(6px); font-size:12px; }
+  .panel .row{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+  .panel button{ background:#1a2032; color:#e8ecf6; border:1px solid #39415a; border-radius:18px; padding:7px 12px; font-size:12px; font-weight:600; }
+  .legend{ display:flex; gap:12px; flex-wrap:wrap; margin-top:8px; color:var(--muted); }
+  .legend i{ width:10px; height:10px; border-radius:50%; display:inline-block; vertical-align:middle; margin-right:4px; }
+  .toast{ position:absolute; left:50%; bottom:90px; transform:translateX(-50%) translateY(15px); z-index:3;
+    background:var(--accent); color:#1a0e08; font-weight:700; padding:8px 16px; border-radius:24px; font-size:13px; opacity:0; transition:all .3s; pointer-events:none; }
+  .toast.show{ opacity:1; transform:translateX(-50%) translateY(0); }
+  .drop{ position:absolute; inset:0; z-index:5; display:none; align-items:center; justify-content:center;
+    background:rgba(255,90,60,.18); border:3px dashed var(--accent); color:#fff; font-size:18px; font-weight:700; }
+  .drop.show{ display:flex; }
+  .hint{ color:var(--muted); margin-top:6px; line-height:1.5; }
+</style>
+</head>
+<body>
+<div id="map"></div>
+
+<div class="hud">
+  <div class="cell"><div class="label">乗りつぶし率</div><div class="val" id="rate">0<small>%</small></div></div>
+  <div class="cell"><div class="label">区間</div><div class="val"><span id="segN">0</span><small>/<span id="segT">0</span></small></div></div>
+  <div class="cell"><div class="label">距離</div><div class="val"><span id="km">0</span><small>km</small></div></div>
+  <div class="cell"><div class="label">駅</div><div class="val"><span id="stnN">0</span><small>/<span id="stnT">0</span></small></div></div>
+  <div class="bar" id="bar"></div>
+</div>
+
+<div class="panel">
+  <div class="row">
+    <b>🚆 実マップ塗りつぶし</b>
+    <button id="reset">リセット</button>
+    <label style="margin-left:auto;">
+      <input id="file" type="file" accept=".geojson,.json,application/geo+json" style="display:none">
+      <span style="background:#1a2032;border:1px solid #39415a;border-radius:18px;padding:7px 12px;cursor:pointer;">📁 GeoJSON読込</span>
+    </label>
+  </div>
+  <div class="legend">
+    <span><i style="background:var(--accent)"></i>乗車済</span>
+    <span><i style="background:var(--muted)"></i>通過</span>
+    <span><i style="background:var(--get)"></i>下車</span>
+    <span><i style="background:var(--accent2)"></i>泊まった</span>
+  </div>
+  <div class="hint" id="hint">線（区間）をタップで塗る／駅をタップで 通過→下車→泊まった。地図はドラッグで移動。
+    実データを試すには路線のGeoJSON（LineString）をドロップ。※内蔵の山手線は概略サンプル。</div>
+</div>
+
+<div class="toast" id="toast"></div>
+<div class="drop" id="drop">GeoJSONをドロップして実データを読み込み</div>
+
+<script>
+// ===== サンプル: 山手線（概略座標・体感用） =====
+const yamanote = [
+  ['東京',35.681,139.767],['神田',35.692,139.771],['秋葉原',35.698,139.773],['御徒町',35.707,139.774],
+  ['上野',35.714,139.777],['鶯谷',35.721,139.778],['日暮里',35.728,139.771],['西日暮里',35.732,139.767],
+  ['田端',35.738,139.761],['駒込',35.736,139.748],['巣鴨',35.733,139.739],['大塚',35.731,139.728],
+  ['池袋',35.729,139.711],['目白',35.721,139.706],['高田馬場',35.712,139.703],['新大久保',35.701,139.700],
+  ['新宿',35.690,139.700],['代々木',35.683,139.702],['原宿',35.670,139.702],['渋谷',35.658,139.701],
+  ['恵比寿',35.646,139.710],['目黒',35.633,139.715],['五反田',35.626,139.723],['大崎',35.619,139.728],
+  ['品川',35.628,139.738],['田町',35.645,139.747],['浜松町',35.655,139.756],['新橋',35.666,139.758],
+  ['有楽町',35.675,139.763],
+];
+
+const map = new maplibregl.Map({
+  container:'map',
+  style:{
+    version:8,
+    sources:{ osm:{ type:'raster', tiles:['https://tile.openstreetmap.org/{z}/{x}/{y}.png'], tileSize:256, attribution:'© OpenStreetMap contributors' } },
+    layers:[{ id:'osm', type:'raster', source:'osm' }]
+  },
+  center:[139.74,35.68], zoom:11.4
+});
+map.addControl(new maplibregl.NavigationControl({showCompass:false}), 'bottom-right');
+
+function haversine(a,b){ const R=6371,toR=x=>x*Math.PI/180;
+  const dLat=toR(b[1]-a[1]), dLng=toR(b[0]-a[0]);
+  const s=Math.sin(dLat/2)**2+Math.cos(toR(a[1]))*Math.cos(toR(b[1]))*Math.sin(dLng/2)**2;
+  return 2*R*Math.asin(Math.sqrt(s)); }
+function vibrate(p){ if(navigator.vibrate){ try{ navigator.vibrate(p); }catch(e){} } }
+function toast(m){ const t=document.getElementById('toast'); t.textContent=m; t.classList.add('show');
+  clearTimeout(t._t); t._t=setTimeout(()=>t.classList.remove('show'),1100); }
+
+// 状態
+let segOn=[], segKm=[], stnSt=[], hasStations=true;
+
+function buildFromStations(list, loop){
+  const segs=[], stns=[]; segKm=[];
+  for(let i=0;i<list.length-(loop?0:1);i++){
+    const a=list[i], b=list[(i+1)%list.length];
+    const ca=[a[2],a[1]], cb=[b[2],b[1]];
+    segs.push({type:'Feature', id:i, properties:{}, geometry:{type:'LineString', coordinates:[ca,cb]}});
+    segKm[i]=haversine(ca,cb);
+  }
+  list.forEach((s,i)=> stns.push({type:'Feature', id:i, properties:{name:s[0]}, geometry:{type:'Point', coordinates:[s[2],s[1]]}}));
+  segOn=segs.map(()=>false); stnSt=list.map(()=>0); hasStations=true;
+  return { rail:{type:'FeatureCollection',features:segs}, stations:{type:'FeatureCollection',features:stns} };
+}
+
+// 任意GeoJSONの線分抽出（実データ読み込み用）
+function buildFromGeoJSON(gj){
+  const segs=[]; segKm=[]; let id=0;
+  const push=coords=>{ if(coords.length<2) return;
+    segs.push({type:'Feature', id, properties:{}, geometry:{type:'LineString', coordinates:coords}});
+    let len=0; for(let i=0;i<coords.length-1;i++) len+=haversine(coords[i],coords[i+1]);
+    segKm[id]=len; id++; };
+  const feats = gj.type==='FeatureCollection'?gj.features : (gj.type==='Feature'?[gj]:[]);
+  feats.forEach(f=>{ const g=f.geometry; if(!g) return;
+    if(g.type==='LineString') push(g.coordinates);
+    else if(g.type==='MultiLineString') g.coordinates.forEach(push); });
+  segOn=segs.map(()=>false); stnSt=[]; hasStations=false;
+  return { rail:{type:'FeatureCollection',features:segs}, stations:{type:'FeatureCollection',features:[]} };
+}
+
+function setData(d, fit){
+  map.getSource('rail').setData(d.rail);
+  map.getSource('stations').setData(d.stations);
+  // feature-state クリア
+  d.rail.features.forEach(f=> map.setFeatureState({source:'rail',id:f.id},{on:false}));
+  d.stations.features.forEach(f=> map.setFeatureState({source:'stations',id:f.id},{st:0}));
+  document.getElementById('segT').textContent=d.rail.features.length;
+  document.getElementById('stnT').textContent=d.stations.features.length;
+  document.getElementById('hint').style.opacity = hasStations?1:.7;
+  if(fit && d.rail.features.length){
+    const b=new maplibregl.LngLatBounds();
+    d.rail.features.forEach(f=> f.geometry.coordinates.forEach(c=> b.extend(c)));
+    map.fitBounds(b,{padding:60,duration:600});
+  }
+  update();
+}
+
+function update(milestone){
+  const n=segOn.filter(Boolean).length;
+  const km=Math.round(segKm.reduce((s,v,i)=> s+(segOn[i]?v:0),0));
+  const rate = segOn.length? Math.round(n/segOn.length*100):0;
+  const stn = stnSt.filter(v=>v>0).length;
+  const rEl=document.getElementById('rate');
+  rEl.innerHTML=rate+'<small>%</small>';
+  document.getElementById('bar').style.width=rate+'%';
+  document.getElementById('segN').textContent=n;
+  document.getElementById('km').textContent=km;
+  document.getElementById('stnN').textContent=stn;
+  rEl.classList.remove('pop'); void rEl.offsetWidth; rEl.classList.add('pop');
+  if(milestone && rate>0 && rate%25===0) toast('🎉 '+rate+'% 達成！');
+}
+
+map.on('load', ()=>{
+  map.addSource('rail',{type:'geojson', data:{type:'FeatureCollection',features:[]}});
+  map.addSource('stations',{type:'geojson', data:{type:'FeatureCollection',features:[]}});
+  map.addLayer({ id:'seg-base', type:'line', source:'rail',
+    layout:{'line-cap':'round'}, paint:{'line-color':'#7a8295','line-width':5} });
+  map.addLayer({ id:'seg-on', type:'line', source:'rail',
+    layout:{'line-cap':'round'},
+    paint:{'line-color':'#ff5a3c','line-width':7,
+      'line-opacity':['case',['boolean',['feature-state','on'],false],1,0]} });
+  map.addLayer({ id:'stn', type:'circle', source:'stations',
+    paint:{ 'circle-radius':6,
+      'circle-color':['match',['to-number',['coalesce',['feature-state','st'],0]],1,'#8a93ab',2,'#46d39a',3,'#ffd23c','#0f1320'],
+      'circle-stroke-width':2.5,
+      'circle-stroke-color':['match',['to-number',['coalesce',['feature-state','st'],0]],1,'#8a93ab',2,'#46d39a',3,'#ffd23c','#cfd6e6'] } });
+
+  setData(buildFromStations(yamanote,true), true);
+});
+
+function pad(p,px){ return [[p.x-px,p.y-px],[p.x+px,p.y+px]]; }
+
+map.on('click', (e)=>{
+  if(!map.getLayer('seg-base')) return;
+  if(hasStations){
+    const sf=map.queryRenderedFeatures(pad(e.point,13),{layers:['stn']});
+    if(sf.length){ const id=sf[0].id;
+      stnSt[id]=(stnSt[id]+1)%4;
+      map.setFeatureState({source:'stations',id},{st:stnSt[id]});
+      vibrate(stnSt[id]===3?[25,40,25]:(stnSt[id]===0?15:30));
+      toast(yamanote[id][0]+'：'+['未訪問','通過','下車','泊まった'][stnSt[id]]);
+      update(); return; }
+  }
+  const seg=map.queryRenderedFeatures(pad(e.point,12),{layers:['seg-base']});
+  if(seg.length){ const id=seg[0].id;
+    segOn[id]=!segOn[id];
+    map.setFeatureState({source:'rail',id},{on:segOn[id]});
+    vibrate(segOn[id]?35:18);
+    update(segOn[id]); }
+});
+map.on('mouseenter','seg-base',()=> map.getCanvas().style.cursor='pointer');
+map.on('mouseleave','seg-base',()=> map.getCanvas().style.cursor='');
+
+document.getElementById('reset').addEventListener('click', ()=>{
+  segOn=segOn.map(()=>false); stnSt=stnSt.map(()=>0);
+  segOn.forEach((_,id)=> map.setFeatureState({source:'rail',id},{on:false}));
+  stnSt.forEach((_,id)=> map.setFeatureState({source:'stations',id},{st:0}));
+  update(); toast('リセットしました');
+});
+
+// ===== 実データ読み込み（ファイル選択 / ドラッグ＆ドロップ） =====
+function loadGeoJSONText(txt){
+  try{ const gj=JSON.parse(txt); setData(buildFromGeoJSON(gj), true);
+    toast('実データ読込: '+segOn.length+'区間'); }
+  catch(err){ toast('GeoJSON解析に失敗'); }
+}
+document.getElementById('file').addEventListener('change', e=>{
+  const f=e.target.files[0]; if(!f) return; const r=new FileReader();
+  r.onload=()=> loadGeoJSONText(r.result); r.readAsText(f);
+});
+const drop=document.getElementById('drop');
+['dragenter','dragover'].forEach(ev=> document.addEventListener(ev, e=>{ e.preventDefault(); drop.classList.add('show'); }));
+['dragleave','drop'].forEach(ev=> document.addEventListener(ev, e=>{ e.preventDefault();
+  if(ev==='drop'||e.relatedTarget===null) drop.classList.remove('show'); }));
+document.addEventListener('drop', e=>{ e.preventDefault(); drop.classList.remove('show');
+  const f=e.dataTransfer.files[0]; if(!f) return; const r=new FileReader();
+  r.onload=()=> loadGeoJSONText(r.result); r.readAsText(f); });
+</script>
+</body>
+</html>
