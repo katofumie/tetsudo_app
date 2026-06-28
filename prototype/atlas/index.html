@@ -148,6 +148,9 @@ const POIS=[
 const LAT0=35.7, KX=Math.cos(LAT0*Math.PI/180);
 const px=(lng,lat)=>[ lng*KX, -lat ];
 const svg=document.getElementById('svg');
+const VW=()=>window.innerWidth||document.documentElement.clientWidth||800;
+const VH=()=>window.innerHeight||document.documentElement.clientHeight||600;
+function sizeSvg(){ svg.style.width=VW()+'px'; svg.style.height=VH()+'px'; }
 const gPref=g('gPref'),gHit=g('gHit'),gSeg=g('gSeg'),gLine=g('gLine'),gPoi=g('gPoi'),gPoiLbl=g('gPoiLbl'),gStn=g('gStn'),gLbl=g('gLbl');
 function g(id){return document.getElementById(id);}
 const NS='http://www.w3.org/2000/svg';
@@ -212,7 +215,7 @@ let vb={x:0,y:0,w:1,h:1};
 function fitTo(xs,ys){ if(!xs.length)return;
   const minx=Math.min(...xs),maxx=Math.max(...xs),miny=Math.min(...ys),maxy=Math.max(...ys);
   const pad=((maxx-minx)||0.02)*0.12; let w=(maxx-minx)+pad*2,h=(maxy-miny)+pad*2;
-  const ar=svg.clientWidth/svg.clientHeight;
+  const ar=VW()/VH();
   if(w/h<ar){ const nw=h*ar; vb={x:minx-pad-(nw-w)/2,y:miny-pad,w:nw,h}; }
   else { const nh=w/ar; vb={x:minx-pad,y:miny-pad-(nh-h)/2,w,h:nh}; } applyScale();
 }
@@ -220,7 +223,7 @@ function fitRail(){ const xs=[],ys=[]; segs.forEach(s=>s.pts.forEach(p=>{xs.push
 function fitJapan(){ const xs=[],ys=[]; PREFS.forEach(p=>{const c=px(p[2],p[1]);xs.push(c[0]);ys.push(c[1]);}); fitTo(xs,ys); }
 function applyScale(){
   svg.setAttribute('viewBox', `${vb.x} ${vb.y} ${vb.w} ${vb.h}`);
-  const s=vb.w/svg.clientWidth;
+  const s=vb.w/VW();
   gLbl.setAttribute('font-size',10*s); gPoiLbl.setAttribute('font-size',9.5*s);
   gPref.setAttribute('font-size',15*s); gLine.setAttribute('font-size',12*s);
   gLbl.style.display   =(showStations && s<=0.00022)?'':'none';
@@ -228,7 +231,7 @@ function applyScale(){
   gPoiLbl.style.display=(s<=0.00045)?'':'none';
   gPoi.style.display   =(s<=0.0011)?'':'none';
   gPref.style.display  =(s>=0.00011)?'':'none';
-  const rs=3.4*s; gStn.querySelectorAll('circle').forEach(c=>c.setAttribute('r',rs));
+  const rs=4.8*s; gStn.querySelectorAll('circle').forEach(c=>c.setAttribute('r',rs));
   const rp=3.0*s; gPoi.querySelectorAll('circle').forEach(c=>c.setAttribute('r',rp));
 }
 
@@ -276,8 +279,11 @@ const drop=g('drop');
 document.addEventListener('dragleave',e=>{ if(e.relatedTarget===null) drop.classList.remove('show'); });
 document.addEventListener('drop',e=>{ e.preventDefault(); drop.classList.remove('show'); const f=e.dataTransfer.files[0]; if(!f)return;
   const r=new FileReader(); r.onload=()=>loadText(r.result); r.readAsText(f); });
-window.addEventListener('resize',applyScale);
-buildSample(); render(); fitRail();
+function boot(){ sizeSvg(); buildSample(); render(); fitRail(); }
+if(document.readyState==='loading') window.addEventListener('DOMContentLoaded',boot); else boot();
+window.addEventListener('load',()=>{ sizeSvg(); fitRail(); });   // 完全表示後に再フィット(Android対策)
+window.addEventListener('resize',()=>{ sizeSvg(); applyScale(); });
+window.addEventListener('orientationchange',()=>{ sizeSvg(); fitRail(); });
 </script>
 </body>
 </html>
