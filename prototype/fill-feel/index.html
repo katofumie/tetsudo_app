@@ -84,6 +84,11 @@
 </header>
 
 <p class="hint">区間を<b>タップ／なぞって</b>塗る・駅を<b>タップ</b>で 通過→下車→泊まった</p>
+<div style="text-align:center; margin:0 12px 10px;">
+  <button id="vibtest" style="background:var(--panel); color:var(--ink); border:1px solid var(--rail-off);
+    border-radius:20px; padding:8px 16px; font-size:13px; font-weight:600;">🔔 バイブをテスト</button>
+  <div id="vibstatus" style="font-size:11px; color:var(--muted); margin-top:6px;"></div>
+</div>
 
 <main>
   <svg id="map" viewBox="0 0 360 460" preserveAspectRatio="xMidYMid meet"></svg>
@@ -141,7 +146,39 @@ const order=['', 'pass','off','stay'];
 document.getElementById('segTotal').textContent = segs.length;
 document.getElementById('stnTotal').textContent = stations.length;
 
-function vibrate(ms){ if(navigator.vibrate) navigator.vibrate(ms); }
+const supportsVibrate = ('vibrate' in navigator) || ('mozVibrate' in navigator);
+function vibrate(pattern){
+  if(!navigator.vibrate) return false;
+  try { return navigator.vibrate(pattern); } catch(e){ return false; }
+}
+
+// 振動サポート状況の表示と切り分けヒント
+(function(){
+  const st = document.getElementById('vibstatus');
+  const secure = window.isSecureContext;
+  const proto = location.protocol; // file: / http: / https:
+  let msg;
+  if(!supportsVibrate){
+    msg = '⚠️ この端末/ブラウザは振動APIに非対応（iPhoneのSafari・PCは鳴りません）。本番のFlutterアプリではネイティブ触覚で鳴ります。';
+  } else {
+    msg = '✓ 振動API対応。鳴らない時は: マナーモード/省電力を解除、'
+        + (proto==='file:' ? 'file:// で開いているため一部ブラウザで無効（http配信推奨）、' : '')
+        + 'ブラウザの振動許可を確認。';
+  }
+  st.textContent = msg;
+})();
+
+document.getElementById('vibtest').addEventListener('click', ()=>{
+  const ok = vibrate([40, 60, 120]); // 長め＆パターンで体感しやすく
+  const st = document.getElementById('vibstatus');
+  if(!supportsVibrate){
+    st.textContent = '⚠️ 非対応端末のため振動できません（iPhone/PCなど）。';
+  } else if(ok===false){
+    st.textContent = '△ 呼び出しはブロックされました（マナーモード/file:///権限を確認）。';
+  } else {
+    st.textContent = '🔔 振動を送信しました。感じない場合はマナーモード/省電力を確認してください。';
+  }
+});
 
 function toast(msg){
   const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show');
@@ -178,8 +215,8 @@ function fillSeg(i, on){
   segState[i]=on;
   const node=segNodes[i];
   node.classList.toggle('on',on);
-  if(on){ node.classList.remove('flash'); void node.offsetWidth; node.classList.add('flash'); vibrate(14); }
-  else vibrate(8);
+  if(on){ node.classList.remove('flash'); void node.offsetWidth; node.classList.add('flash'); vibrate(35); }
+  else vibrate(18);
   refresh(on);
   return true;
 }
@@ -200,7 +237,7 @@ function cycleStn(id){
   if(order[stnState[id]]) c.classList.add(order[stnState[id]]);
   ring.classList.toggle('show', stnState[id]===3);
   c.classList.remove('bump'); void c.offsetWidth; c.classList.add('bump');
-  vibrate(stnState[id]===0?6:12);
+  vibrate(stnState[id]===3 ? [25,40,25] : (stnState[id]===0?15:30));
   const names=['未訪問','通過','下車','泊まった'];
   toast(S[id].name+'：'+names[stnState[id]]);
   refresh(false);
