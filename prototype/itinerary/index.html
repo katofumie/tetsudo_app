@@ -162,7 +162,7 @@ function render(){
       <input class="d-label" data-d="${di}" data-f="label" value="${esc(d.label)}" placeholder="例：品川→嵐山">
       <button class="btn del" data-act="delday" data-d="${di}">日を削除</button>
     </div>`;
-    h+=overviewHTML(d);
+    h+=`<div id="ov-${di}">${overviewHTML(d)}</div>`;
     // legs
     h+=`<div class="sec"><h3>区間（鉄道）</h3>`;
     d.legs.forEach((lg,li)=>{
@@ -216,7 +216,10 @@ function getByPath(path){ const [di,coll,idx]=path.split('.'); return trips[cur]
 function fieldTarget(el){ const t=trips[cur], d=el.dataset; if(d.l!=null) return t.days[+d.d].legs[+d.l];
   if(d.i!=null) return t.days[+d.d].items[+d.i]; if(d.d!=null) return t.days[+d.d]; return t; }
 g('main').addEventListener('input', e=>{ const el=e.target; if(!el.dataset||!el.dataset.f) return;
-  fieldTarget(el)[el.dataset.f]=el.value; if(el.dataset.f==='title') renderShell(); save(); });
+  fieldTarget(el)[el.dataset.f]=el.value;
+  if(el.dataset.f==='title') renderShell();
+  if(el.dataset.d!=null){ const w=document.getElementById('ov-'+el.dataset.d); if(w) w.innerHTML=overviewHTML(trips[cur].days[+el.dataset.d]); }  // 入力中も横並びを即時更新
+  save(); });
 // blur(change)で計算欄を更新するため再描画
 g('main').addEventListener('change', e=>{ const el=e.target;
   if(el.dataset&&el.dataset.act==='addphoto'){ handleAddPhoto(el); return; }
