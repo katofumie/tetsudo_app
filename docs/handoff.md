@@ -1,0 +1,95 @@
+# 引き継ぎ表（新セッション用サマリー）
+
+このファイルだけ読めば、別セッション/別担当でも作業を継続できるようにまとめたもの。
+最終更新の状況は `git log` を参照。
+
+---
+
+## 0. 一言でいうと
+「乗り鉄向け：全国の鉄道を塗りつぶす地図 ＋ 旅のしおり（行程表）」アプリ。
+**当面はWebアプリ**として育て、要件が固まったら**Androidネイティブ(Flutter)へ移行**予定（早め希望）。
+現在はGitHub Pagesで公開し、URLをリロードして使う運用。
+
+## 1. 公開URL（ユーザーが日常的に使う）
+- 地図（塗りつぶしアトラス）: https://katofumie.github.io/tetsudo_app/prototype/atlas/
+- 旅のしおり（行程表）: https://katofumie.github.io/tetsudo_app/prototype/itinerary/
+- 両ページ左上の[🗺地図｜📖しおり]トグルで相互に行き来。
+
+## 2. リポジトリと開発フロー（重要）
+- repo: `katofumie/tetsudo_app`（**public**）。作業ブランチ: **`claude/train-journey-app-design-iy6twi`**
+- **GitHub Pages はこのブランチのルートを配信**している（Settings→Pages）。だから:
+  - 変更は必ずこのブランチに push → 1〜2分後にURLリロードで反映。
+  - **ユーザーがGitHub Web画面から直接ファイル(データ)をアップロードする**ことがあるため、
+    push前に必ず `git pull --rebase origin <branch>` してから push すること（fast-forward拒否対策）。
+- main へは勝手に push しない。
+
+## 3. 確定している方針（決定済み）
+- 技術: 当面 **Webアプリ**（HTML/JS自作）。将来 **Flutter** 化（設計・データ・描画ロジックは流用、UIは作り直し）。
+- データ: **手入力中心**。塗りつぶしマスタは **国土数値情報 N02(鉄道)** 主軸＋N03/都道府県GeoJSONで県境。
+- 状態判定（乗った/通過/下車/泊まった）は**すべて手動**。「塗る＝乗りつぶす」手触りが中核。
+- 費用: 自分用は実質¥0、公開しても主に Apple Developer $99/年（詳細 `docs/cost-research.md`）。
+- データモデルは2層: 「実績(塗り/駅状態)」と「計画(行程表)」を分離（`docs/design.md`）。
+
+## 4. リポジトリ構成
+```
+docs/
+  design.md         … 設計図(2層モデル・ER・画面)
+  cost-research.md  … 費用調査(出典・確度つき)
+  handoff.md        … 本ファイル
+data-prep/          … 国土数値情報→GeoJSON変換キット(ユーザーのPCで実行)
+  README.md, package.json, add-rail-meta.mjs(.gitignoreでnode_modules等除外)
+prototype/
+  atlas/index.html      … 塗りつぶし地図(自己完結SVG, 外部依存なし)
+  atlas/rail-color.geojson   … 全国路線(色付, 21,932区間) ※ユーザーがアップロード
+  atlas/japan.geojson.txt    … 都道府県ポリゴン(県境/海岸線, 12.4MB)
+  atlas/stations.geojson     … 全国駅(10,234点, N02_005=駅名, N02_005g=グループ)
+  itinerary/index.html  … 旅のしおり(行程表)
+  fill-feel/, real-map/ … 初期プロトタイプ(参考・非使用)
+```
+
+## 5. 地図(atlas) 実装メモ
+- 技術: **タイルもWebGLも使わない自前SVG描画**（Android真っ白対策・乗りつぶしブック風の路線図）。
+- 起動時に同ディレクトリの `rail-color.geojson` / `japan.geojson(.txt)` / `stations.geojson` を
+  `fetch` で自動読込（無ければサンプル/IndexedDB復元）。→ **全デバイスで同じ地図**。
+- 操作: 線タップで塗る（緑・太線）/ 駅タップで 通過→下車→泊まった / ドラッグ移動・ピンチ・＋−ボタン。
+- 表示制御: 投影は簡易正距円筒(KX=cos35.7°)。`vb`(viewBox)で拡大縮小。線は`non-scaling-stroke`。
+  - 駅は**画面内のみ描画(間引き)**＋**重要度(imp=乗入路線数)で段階表示**（主要駅は引いた状態でも丸＋名前。丸と名前は連動）。
+- 検索窓: 駅名・路線名で該当地点へ移動。「ホーム」で全国デフォルト表示。
+- 保存: 読込データ＋塗り状態をIndexedDB(`atlasStore`)に自動保存・復元（端末ごと）。
+- 温泉/観光は内蔵サンプル(POIS)。県境は読み込んだポリゴンの輪郭線(海岸線＋県境)。
+
+## 6. しおり(itinerary) 実装メモ
+- 単一HTML。データは IndexedDB(`shiori`, キー`trips`)に自動保存＋手動「💾保存」ボタン。
+- 構造: trips[] → days[] → legs[](発着駅/時刻/列車/号車席/メモ/写真) ＋ items[](予定)。
+- 予定の種別(KINDS): 昼ご飯/夜ご飯/宿泊/観光/寄り道/その他。
+- 各日の先頭に「Day N + 日付(◯月◯日(曜))」の濃色バナーで区切り。
+- **行程サマリー**領域(タイトルと入力の間, 独立パネル): 日ごとに横並び(発着駅・時刻・列車・乗車/待ち時間)。
+  ラベル行の右に **昼/夜/宿を最大3行**でコンパクト表示（予定のkindから自動生成, 入力中も即時反映）。
+- 便利機能: 区間/日追加時に**発駅=直前の到着駅**を自動補完、日追加で**翌日(連番)**を自動入力、移動なしチェック。
+- 起動時 `migrate()`: 旧・日単位の昼/夜/宿フィールドを予定(item)へ移行（データ保全）。
+
+## 7. 環境の制約（この実行環境特有）
+- **egress制限が強い**: 開発環境からは外部データ取得(WebFetch/curl)が403で不可。
+  → 鉄道データ等は**ユーザーのPC**で取得・変換し、GitHub Webでアップロードする運用。
+- npmレジストリは到達可（mapshaper等はinstall可）。
+- Flutter SDKは未インストール。
+
+## 8. データ下ごしらえ手順（再掲・ユーザーのPCで）
+1. N02鉄道DL→解凍→UTF-8フォルダで:
+   `npx mapshaper "N02-XX_RailroadSection.shp" -simplify 15% keep-shapes -o rail.geojson`
+   `node add-rail-meta.mjs rail.geojson > rail-color.geojson`（路線名・色付与）
+2. 駅: `npx mapshaper "N02-XX_Station.shp" -points centroid -o stations.geojson`
+3. 県境: 軽量な都道府県GeoJSON(例: dataofjapan/land の japan.geojson)を1ファイルDL。
+4. それらを GitHub Web で `prototype/atlas/` にアップロード（ブランチ＝上記作業ブランチ）。
+
+## 9. 次の候補（未着手・要望ベース）
+- しおり: 号車・座席や宿泊もサマリーへ（一部実装済）/ 計画↔実績の切替 / 費用・割り勘。
+- 地図×しおり連携: しおりの乗車区間を地図の塗りつぶしへ反映。
+- Flutterネイティブ化（Android優先）。
+- 地図: 実際の路線カラーに寄せる、県境の濃さ調整 等。
+
+## 10. 新セッション開始時の最初の一手
+1. このファイルと `docs/design.md` を読む。
+2. `git log --oneline -20` で最新状況を把握。
+3. 作業ブランチ `claude/train-journey-app-design-iy6twi` で作業、push前に `git pull --rebase`。
+4. HTMLは `node -e` で構文チェック＋簡易DOMスタブで関数単体テストしてから commit/push。
