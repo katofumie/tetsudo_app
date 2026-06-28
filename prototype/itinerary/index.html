@@ -57,6 +57,9 @@
   .photo-btn{ font-size:12px; }
   .foot{ display:flex; justify-content:space-between; align-items:center; margin-top:4px; }
   .empty{ color:var(--muted); text-align:center; padding:40px 12px; }
+  .nomove-chk{ font-size:12px; display:flex; align-items:center; gap:4px; font-weight:700; color:#5b6b5b; cursor:pointer; white-space:nowrap; }
+  .nomove{ color:var(--muted); font-weight:700; padding:6px 2px; }
+  .ov-nomove{ color:var(--muted); font-weight:700; padding:6px 4px; white-space:nowrap; }
   /* 独立した行程サマリー領域 */
   .ov-area{ background:#fff; border:1px solid var(--line); border-radius:14px; margin-bottom:16px; padding-bottom:6px; box-shadow:0 1px 4px rgba(0,0,0,.04); overflow:hidden; }
   .ov-area .ttl{ font-size:11px; color:var(--muted); font-weight:800; padding:9px 12px 2px; letter-spacing:.05em; background:#fbfaf5; border-bottom:1px solid var(--line); }
@@ -101,7 +104,8 @@ function uid(){ return Date.now().toString(36)+Math.floor(Math.random()*1e4).toS
 
 function newLeg(){ return {fromStn:'',depTime:'',toStn:'',arrTime:'',train:'',seat:'',memo:'',photos:[]}; }
 function newItem(k){ return {kind:k||'食事',name:'',place:'',time:'',memo:'',photos:[]}; }
-function newDay(){ return {date:'',label:'',legs:[],items:[]}; }
+function newDay(){ return {date:'',label:'',noTravel:false,legs:[],items:[]}; }
+function nextDate(ymd){ if(!/^\d{4}-\d{2}-\d{2}$/.test(ymd||'')) return ''; const d=new Date(ymd+'T00:00:00'); d.setDate(d.getDate()+1); const p=n=>String(n).padStart(2,'0'); return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate()); }
 function newTrip(){ return {id:uid(),title:'新しい旅程',start:'',end:'',days:[newDay()]}; }
 
 // ===== 時間計算 =====
@@ -129,6 +133,7 @@ function photosHTML(path){
 
 // 入力から1日の移動サマリー(横並び)を生成
 function overviewHTML(d){
+  if(d.noTravel) return '<div class="overview"><div class="ov-nomove">🛏 移動なし</div></div>';
   if(!d.legs.length) return '';
   const seq=[];
   d.legs.forEach(lg=>{
@@ -171,9 +176,12 @@ function render(){
     h+=`<div class="day"><div class="day-head">
       <input class="d-date" type="date" data-d="${di}" data-f="date" value="${esc(d.date)}">
       <input class="d-label" data-d="${di}" data-f="label" value="${esc(d.label)}" placeholder="例：品川→嵐山">
+      <label class="nomove-chk"><input type="checkbox" data-d="${di}" data-f="noTravel" ${d.noTravel?'checked':''}>移動なし</label>
       <button class="btn del" data-act="delday" data-d="${di}">日を削除</button>
     </div>`;
     // legs
+    if(d.noTravel){ h+=`<div class="sec"><div class="nomove">🛏 この日は移動なし</div></div>`; }
+    else {
     h+=`<div class="sec"><h3>区間（鉄道）</h3>`;
     d.legs.forEach((lg,li)=>{
       const ride=fmtDur((toMin(lg.arrTime)!=null&&toMin(lg.depTime)!=null)?toMin(lg.arrTime)-toMin(lg.depTime):null);
@@ -198,6 +206,7 @@ function render(){
       </div>`;
     });
     h+=`<button class="btn add" data-act="addleg" data-d="${di}">＋区間を追加</button></div>`;
+    }
     // items
     h+=`<div class="sec"><h3>観光・食事・宿泊など</h3>`;
     d.items.forEach((it,ii)=>{
@@ -226,6 +235,7 @@ function getByPath(path){ const [di,coll,idx]=path.split('.'); return trips[cur]
 function fieldTarget(el){ const t=trips[cur], d=el.dataset; if(d.l!=null) return t.days[+d.d].legs[+d.l];
   if(d.i!=null) return t.days[+d.d].items[+d.i]; if(d.d!=null) return t.days[+d.d]; return t; }
 g('main').addEventListener('input', e=>{ const el=e.target; if(!el.dataset||!el.dataset.f) return;
+  if(el.type==='checkbox') return;   // チェックボックスはchangeで処理
   fieldTarget(el)[el.dataset.f]=el.value;
   if(el.dataset.f==='title') renderShell();
   if(el.dataset.d!=null){ const w=document.getElementById('ov-'+el.dataset.d); if(w) w.innerHTML=overviewHTML(trips[cur].days[+el.dataset.d]); }  // 入力中も横並びを即時更新
@@ -233,12 +243,13 @@ g('main').addEventListener('input', e=>{ const el=e.target; if(!el.dataset||!el.
 // blur(change)で計算欄を更新するため再描画
 g('main').addEventListener('change', e=>{ const el=e.target;
   if(el.dataset&&el.dataset.act==='addphoto'){ handleAddPhoto(el); return; }
+  if(el.type==='checkbox' && el.dataset.f){ fieldTarget(el)[el.dataset.f]=el.checked; save(); render(); return; }   // 移動なし切替
   if(el.dataset&&el.dataset.f){ render(); } });   // 入力確定で横並びサマリーも更新
 
 // ===== クリック(追加・削除) =====
 g('main').addEventListener('click', e=>{ const el=e.target.closest('[data-act]'); if(!el) return; const a=el.dataset.act, t=trips[cur];
   const di=+el.dataset.d;
-  if(a==='addday'){ t.days.push(newDay()); }
+  if(a==='addday'){ const last=t.days[t.days.length-1]; const nd=newDay(); nd.date=nextDate(last&&last.date); t.days.push(nd); }
   else if(a==='delday'){ if(confirm('この日を削除しますか？')) t.days.splice(di,1); else return; }
   else if(a==='addleg'){ t.days[di].legs.push(newLeg()); }
   else if(a==='delleg'){ t.days[di].legs.splice(+el.dataset.l,1); }
