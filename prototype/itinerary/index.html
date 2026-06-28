@@ -71,6 +71,12 @@
   .ov-day{ border-top:1px solid #f1ede2; }
   .ov-day:first-of-type{ border-top:none; }
   .ov-day-lbl{ font-size:12px; font-weight:800; color:var(--ink); padding:8px 12px 0; }
+  .ov-body{ display:flex; flex-wrap:wrap; align-items:flex-start; gap:6px; }
+  .ov-flow{ flex:1 1 300px; min-width:0; }
+  .ov-meals{ flex:0 1 230px; display:flex; flex-direction:column; gap:4px; padding:6px 12px 8px; }
+  .ovm{ display:flex; align-items:center; gap:6px; background:#fbfaf5; border:1px solid var(--line); border-radius:8px; padding:3px 8px; }
+  .ovm-ic{ font-size:13px; } .ovm-lb{ font-size:11px; color:var(--muted); font-weight:800; width:15px; }
+  .ovm input{ flex:1; border:none; background:transparent; font-size:13px; min-width:50px; outline:none; color:var(--ink); }
   /* 横並びサマリー(1日の移動を一望) */
   .overview{ display:flex; align-items:stretch; overflow-x:auto; padding:6px 12px 10px; -webkit-overflow-scrolling:touch; }
   .ov-stn{ flex:0 0 auto; text-align:center; min-width:62px; padding:0 4px; display:flex; flex-direction:column; justify-content:center; }
@@ -111,7 +117,7 @@ function uid(){ return Date.now().toString(36)+Math.floor(Math.random()*1e4).toS
 
 function newLeg(){ return {fromStn:'',depTime:'',toStn:'',arrTime:'',train:'',seat:'',memo:'',photos:[]}; }
 function newItem(k){ return {kind:k||'食事',name:'',place:'',time:'',memo:'',photos:[]}; }
-function newDay(){ return {date:'',label:'',noTravel:false,legs:[],items:[]}; }
+function newDay(){ return {date:'',label:'',noTravel:false,lunch:'',dinner:'',hotel:'',legs:[],items:[]}; }
 function nextDate(ymd){ if(!/^\d{4}-\d{2}-\d{2}$/.test(ymd||'')) return ''; const d=new Date(ymd+'T00:00:00'); d.setDate(d.getDate()+1); const p=n=>String(n).padStart(2,'0'); return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate()); }
 function fmtJDate(ymd){ if(!/^\d{4}-\d{2}-\d{2}$/.test(ymd||'')) return ''; const d=new Date(ymd+'T00:00:00'); const w='日月火水木金土'[d.getDay()]; return (d.getMonth()+1)+'月'+d.getDate()+'日('+w+')'; }
 // di より前で「最後に到着した駅」を返す(発駅の自動補完用)
@@ -180,7 +186,15 @@ function render(){
   // 独立した行程サマリー領域(タイトルと入力エリアの間)
   h+=`<div class="ov-area"><div class="ttl">🚃 行程サマリー</div>`;
   t.days.forEach((d,di)=>{ const dl=`Day ${di+1}${fmtJDate(d.date)?' · '+fmtJDate(d.date):''}${d.label?'　'+d.label:''}`;
-    h+=`<div class="ov-day"><div class="ov-day-lbl">${esc(dl)}</div><div id="ov-${di}">${overviewHTML(d)}</div></div>`; });
+    h+=`<div class="ov-day"><div class="ov-day-lbl">${esc(dl)}</div>
+      <div class="ov-body">
+        <div class="ov-flow" id="ov-${di}">${overviewHTML(d)}</div>
+        <div class="ov-meals">
+          <div class="ovm"><span class="ovm-ic">🍱</span><span class="ovm-lb">昼</span><input data-d="${di}" data-f="lunch" value="${esc(d.lunch||'')}" placeholder="昼ごはん"></div>
+          <div class="ovm"><span class="ovm-ic">🌙</span><span class="ovm-lb">夜</span><input data-d="${di}" data-f="dinner" value="${esc(d.dinner||'')}" placeholder="夜ごはん"></div>
+          <div class="ovm"><span class="ovm-ic">🛏</span><span class="ovm-lb">宿</span><input data-d="${di}" data-f="hotel" value="${esc(d.hotel||'')}" placeholder="宿泊先"></div>
+        </div>
+      </div></div>`; });
   h+=`</div>`;
   // 入力エリア
   t.days.forEach((d,di)=>{
