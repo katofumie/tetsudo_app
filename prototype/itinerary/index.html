@@ -57,6 +57,16 @@
   .photo-btn{ font-size:12px; }
   .foot{ display:flex; justify-content:space-between; align-items:center; margin-top:4px; }
   .empty{ color:var(--muted); text-align:center; padding:40px 12px; }
+  /* 横並びサマリー(1日の移動を一望) */
+  .overview{ display:flex; align-items:stretch; overflow-x:auto; padding:11px 12px; background:#fbfaf5; border-bottom:1px solid var(--line); -webkit-overflow-scrolling:touch; }
+  .ov-stn{ flex:0 0 auto; text-align:center; min-width:62px; padding:0 4px; display:flex; flex-direction:column; justify-content:center; }
+  .ov-stn .nm{ font-weight:800; font-size:13px; white-space:nowrap; }
+  .ov-stn .t{ font-size:11px; white-space:nowrap; line-height:1.5; }
+  .ov-stn .arr{ color:#c08a3e; } .ov-stn .dep{ color:#3f7a3f; }
+  .ov-stn .wait{ font-size:10px; color:#a23; background:#fbe3e3; border-radius:8px; padding:1px 6px; margin-top:3px; display:inline-block; white-space:nowrap; }
+  .ov-leg{ flex:0 0 auto; align-self:center; text-align:center; color:var(--muted); font-size:10px; padding:0 4px; min-width:72px; }
+  .ov-leg .tr{ font-weight:800; color:var(--ink); white-space:nowrap; font-size:11px; }
+  .ov-leg .ar{ font-size:16px; color:#bbb; line-height:1; }
 </style>
 </head>
 <body>
@@ -65,6 +75,8 @@
   <a class="nav" href="../atlas/">🗺 地図</a>
   <select id="tripSel"></select>
   <button class="btn" id="newTrip">＋新規旅程</button>
+  <button class="btn" id="saveBtn" style="margin-left:auto">💾 保存</button>
+  <span id="saveStatus" style="font-size:11px;color:var(--muted)"></span>
 </header>
 <main id="main"></main>
 
@@ -77,7 +89,8 @@ async function idbSet(k,v){ try{ const db=await idb(); await new Promise(r=>{ co
 async function idbGet(k){ try{ const db=await idb(); return await new Promise(r=>{ const tx=db.transaction('kv','readonly'); const rq=tx.objectStore('kv').get(k); rq.onsuccess=()=>r(rq.result); rq.onerror=()=>r(null); }); }catch(e){ return null; } }
 
 let trips=[], cur=0, saveT;
-function save(){ clearTimeout(saveT); saveT=setTimeout(()=>idbSet('trips',trips),250); }
+function setStatus(t){ const s=document.getElementById('saveStatus'); if(s) s.textContent=t; }
+function save(){ setStatus('保存中…'); clearTimeout(saveT); saveT=setTimeout(async()=>{ await idbSet('trips',trips); setStatus('✓ 保存済み'); },250); }
 function uid(){ return Date.now().toString(36)+Math.floor(Math.random()*1e4).toString(36); }
 
 function newLeg(){ return {fromStn:'',depTime:'',toStn:'',arrTime:'',train:'',seat:'',memo:'',photos:[]}; }
@@ -108,6 +121,30 @@ function photosHTML(path){
   return h;
 }
 
+// 入力から1日の移動サマリー(横並び)を生成
+function overviewHTML(d){
+  if(!d.legs.length) return '';
+  const seq=[];
+  d.legs.forEach(lg=>{
+    const last=seq[seq.length-1];
+    if(last && last.type==='stn' && last.name===(lg.fromStn||'?') && !last.dep){ last.dep=lg.depTime; }
+    else seq.push({type:'stn',name:lg.fromStn||'?',arr:'',dep:lg.depTime});
+    const ride=(toMin(lg.arrTime)!=null&&toMin(lg.depTime)!=null)?fmtDur(toMin(lg.arrTime)-toMin(lg.depTime)):'';
+    seq.push({type:'leg',train:lg.train,ride});
+    seq.push({type:'stn',name:lg.toStn||'?',arr:lg.arrTime,dep:''});
+  });
+  let h='<div class="overview">';
+  seq.forEach(n=>{
+    if(n.type==='leg'){ h+=`<div class="ov-leg"><div class="ar">→</div>${n.train?`<div class="tr">${esc(n.train)}</div>`:''}${n.ride?`<div>${esc(n.ride)}</div>`:''}</div>`; }
+    else { const wait=(toMin(n.dep)!=null&&toMin(n.arr)!=null)?fmtDur(toMin(n.dep)-toMin(n.arr)):'';
+      h+=`<div class="ov-stn"><div class="nm">${esc(n.name)}</div>`+
+         (n.arr?`<div class="t arr">着 ${esc(n.arr)}</div>`:'')+
+         (n.dep?`<div class="t dep">発 ${esc(n.dep)}</div>`:'')+
+         (wait?`<div class="wait">⏳${wait}</div>`:'')+`</div>`; }
+  });
+  return h+'</div>';
+}
+
 function render(){
   const t=trips[cur];
   if(!t){ g('main').innerHTML='<div class="empty">旅程がありません。「＋新規旅程」で作成してください。</div>'; return; }
@@ -125,6 +162,7 @@ function render(){
       <input class="d-label" data-d="${di}" data-f="label" value="${esc(d.label)}" placeholder="例：品川→嵐山">
       <button class="btn del" data-act="delday" data-d="${di}">日を削除</button>
     </div>`;
+    h+=overviewHTML(d);
     // legs
     h+=`<div class="sec"><h3>区間（鉄道）</h3>`;
     d.legs.forEach((lg,li)=>{
@@ -182,7 +220,7 @@ g('main').addEventListener('input', e=>{ const el=e.target; if(!el.dataset||!el.
 // blur(change)で計算欄を更新するため再描画
 g('main').addEventListener('change', e=>{ const el=e.target;
   if(el.dataset&&el.dataset.act==='addphoto'){ handleAddPhoto(el); return; }
-  if(el.dataset&&['depTime','arrTime'].includes(el.dataset.f)){ render(); } });
+  if(el.dataset&&el.dataset.f){ render(); } });   // 入力確定で横並びサマリーも更新
 
 // ===== クリック(追加・削除) =====
 g('main').addEventListener('click', e=>{ const el=e.target.closest('[data-act]'); if(!el) return; const a=el.dataset.act, t=trips[cur];
@@ -207,6 +245,7 @@ function handleAddPhoto(el){ const f=el.files&&el.files[0]; if(!f) return; readI
 
 g('tripSel').addEventListener('change', e=>{ cur=+e.target.value; render(); });
 g('newTrip').addEventListener('click', ()=>{ trips.push(newTrip()); cur=trips.length-1; renderShell(); render(); save(); });
+g('saveBtn').addEventListener('click', async()=>{ setStatus('保存中…'); await idbSet('trips',trips); setStatus('✓ 保存しました'); });
 
 (async function boot(){
   const saved=await idbGet('trips');
