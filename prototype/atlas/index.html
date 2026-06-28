@@ -174,7 +174,7 @@ function vibrate(p){ if(navigator.vibrate){ try{navigator.vibrate(p);}catch(e){}
 function toast(m){ const t=g('toast'); t.textContent=m; t.classList.add('show'); clearTimeout(t._t); t._t=setTimeout(()=>t.classList.remove('show'),1100); }
 
 // ===== 自動保存・復元(IndexedDB)：読み込んだデータと塗った状態をブラウザに記憶 =====
-const store={rail:null,borders:null,spots:null,paint:{seg:[],stn:{}}};
+const store={rail:null,borders:null,spots:null,stations:null,paint:{seg:[],stn:{}}};
 function idb(){ return new Promise((res,rej)=>{ if(!('indexedDB' in window)||!window.indexedDB) return rej();
   const o=indexedDB.open('atlasStore',1);
   o.onupgradeneeded=()=>{ if(!o.result.objectStoreNames.contains('kv')) o.result.createObjectStore('kv'); };
@@ -182,9 +182,10 @@ function idb(){ return new Promise((res,rej)=>{ if(!('indexedDB' in window)||!wi
 async function idbSet(k,v){ try{ const db=await idb(); await new Promise(r=>{ const tx=db.transaction('kv','readwrite'); tx.objectStore('kv').put(v,k); tx.oncomplete=r; tx.onerror=r; }); }catch(e){} }
 async function idbGet(k){ try{ const db=await idb(); return await new Promise(r=>{ const tx=db.transaction('kv','readonly'); const rq=tx.objectStore('kv').get(k); rq.onsuccess=()=>r(rq.result); rq.onerror=()=>r(null); }); }catch(e){ return null; } }
 let saveT; function saveState(){ clearTimeout(saveT); saveT=setTimeout(()=>idbSet('state',store),300); }
-async function restore(){ const st=await idbGet('state'); if(!st||(!st.rail&&!st.borders&&!st.spots)) return;
+async function restore(){ const st=await idbGet('state'); if(!st||(!st.rail&&!st.borders&&!st.spots&&!st.stations)) return;
   if(st.rail) setRail(st.rail.features); if(st.borders) setBorders(st.borders.features); if(st.spots) setSpots(st.spots.features);
-  store.rail=st.rail||null; store.borders=st.borders||null; store.spots=st.spots||null; store.paint=st.paint||{seg:[],stn:{}};
+  if(st.stations) setStations(st.stations.features);
+  store.rail=st.rail||null; store.borders=st.borders||null; store.spots=st.spots||null; store.stations=st.stations||null; store.paint=st.paint||{seg:[],stn:{}};
   (store.paint.seg||[]).forEach(id=>{ if(segs[id]) segs[id].on=true; });
   for(const k in (store.paint.stn||{})){ if(stns[k]) stns[k].st=store.paint.stn[k]; }
   render(); if(segs.length) fitRail(); toast('前回のデータを復元しました'); }
@@ -227,6 +228,16 @@ function setBorders(polyFeats){
       borders.push('M'+ring.map(c=>{const p=px(c[0],c[1]);return p[0].toFixed(5)+' '+p[1].toFixed(5);}).join(' L')+'Z'); }));
   });
 }
+function setStations(pointFeats){
+  const seen=new Set(), arr=[];
+  pointFeats.forEach(f=>{ if(!f.geometry||f.geometry.type!=='Point')return; const c=f.geometry.coordinates, p=f.properties||{};
+    const name=p.N02_005||p.name||p['駅名']||''; if(!name)return;
+    const key=p.N02_005g||p.N02_005c||(name+'@'+c[0].toFixed(2)+','+c[1].toFixed(2));
+    if(seen.has(key))return; seen.add(key);
+    arr.push({name, lat:c[1], lng:c[0], st:0, p:px(c[0],c[1])}); });
+  arr.forEach((s,i)=>s.id=i); stns=arr; showStations=stns.length>0;
+}
+function pointsAreStations(pts){ return pts.some(f=>f.properties&&(f.properties.N02_005||f.properties.N02_005g||f.properties['駅名'])); }
 function setSpots(pointFeats){
   spots = pointFeats.map(f=>{ const c=f.geometry.coordinates, p=f.properties||{};
     const name=p.name||p.NAME||p['名称']||p['名前']||''; let t=p.type||p.category||'';
@@ -240,7 +251,8 @@ function routeGeoJSON(gj){
   const msg=[];
   if(lines.length){ setRail(lines); store.rail={type:'FeatureCollection',features:lines}; store.paint={seg:[],stn:{}}; msg.push(segs.length+'区間'); }
   if(polys.length){ setBorders(polys); store.borders={type:'FeatureCollection',features:polys}; msg.push(borders.length+'境界'); }
-  if(pts.length){ setSpots(pts); store.spots={type:'FeatureCollection',features:pts}; msg.push(spots.length+'スポット'); }
+  if(pts.length){ if(pointsAreStations(pts)){ setStations(pts); store.stations={type:'FeatureCollection',features:pts}; msg.push(stns.length+'駅'); }
+    else { setSpots(pts); store.spots={type:'FeatureCollection',features:pts}; msg.push(spots.length+'スポット'); } }
   render(); if(lines.length) fitRail(); saveState();
   toast('読込: '+(msg.join(' / ')||'対象なし'));
 }
@@ -261,11 +273,24 @@ function render(){
   segs.forEach(s=>{ gSeg.appendChild(mk('path',{d:pathd(s.pts),class:'seg'+(s.on?' on':''),stroke:s.color||'var(--off)','data-seg':s.id})); });
   // 路線名
   lineLbls.forEach(l=> gLine.appendChild(mk('text',{x:l.p[0],y:l.p[1],'text-anchor':'middle',class:'linelbl',fill:l.color},l.name)));
-  if(showStations) stns.forEach(s=>{ gStn.appendChild(mk('circle',{cx:s.p[0],cy:s.p[1],r:0.004,class:'stn'+stCls(s.st),'data-stn':s.id}));
-    gLbl.appendChild(mk('text',{x:s.p[0],y:s.p[1]-0.006,'text-anchor':'middle',class:'lbl'},s.name)); });
+  renderStations();
   g('segT').textContent=segs.length; g('stnT').textContent=showStations?stns.length:0;
   applyScale(); update();
 }
+
+// 駅は数が多いので「画面に映る範囲だけ」描く(間引き)
+function renderStations(){
+  gStn.innerHTML=''; gLbl.innerHTML='';
+  if(!showStations) return;
+  const s=vb.w/VW(); if(s>0.0012) return;            // 引きすぎでは描かない
+  const m=vb.w*0.1, x0=vb.x-m, x1=vb.x+vb.w+m, y0=vb.y-m, y1=vb.y+vb.h+m;
+  const showLbl=s<=0.00042, r=4.8*s; let n=0;
+  for(const st of stns){ const p=st.p; if(p[0]<x0||p[0]>x1||p[1]<y0||p[1]>y1) continue;
+    gStn.appendChild(mk('circle',{cx:p[0],cy:p[1],r,class:'stn'+stCls(st.st),'data-stn':st.id}));
+    if(showLbl) gLbl.appendChild(mk('text',{x:p[0],y:p[1]-0.006,'text-anchor':'middle',class:'lbl'},st.name));
+    if(++n>1500) break; }
+}
+let stnT2; function scheduleStations(){ clearTimeout(stnT2); stnT2=setTimeout(renderStations,90); }
 
 // ===== ビューボックス =====
 let vb={x:0,y:0,w:1,h:1};
@@ -290,6 +315,7 @@ function applyScale(){
   gPref.style.display  =(s>=0.00011)?'':'none';
   const rs=4.8*s; gStn.querySelectorAll('circle').forEach(c=>c.setAttribute('r',rs));
   const rp=3.0*s; gPoi.querySelectorAll('circle').forEach(c=>c.setAttribute('r',rp));
+  scheduleStations();
 }
 
 // パン/ズーム時の再描画をフレーム単位に間引く(重さ対策)
@@ -378,6 +404,9 @@ async function init(){
   const bordTxt=await tryFetchText(['borders.geojson','prefectures.geojson','japan.geojson','japan.geojson.txt']);
   if(bordTxt){ try{ const fc=JSON.parse(bordTxt); const polys=(fc.features||[]).filter(f=>f.geometry&&/Polygon/.test(f.geometry.type));
     if(polys.length){ setBorders(polys); store.borders={type:'FeatureCollection',features:polys}; loaded=true; } }catch(e){} }
+  const stnTxt=await tryFetchText(['stations.geojson']);
+  if(stnTxt){ try{ const fc=JSON.parse(stnTxt); const pts=(fc.features||[]).filter(f=>f.geometry&&f.geometry.type==='Point');
+    if(pts.length){ setStations(pts); store.stations={type:'FeatureCollection',features:pts}; loaded=true; } }catch(e){} }
   if(loaded){
     const st=await idbGet('state');
     if(st&&st.paint){ store.paint=st.paint;
