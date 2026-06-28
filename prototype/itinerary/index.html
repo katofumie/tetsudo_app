@@ -25,7 +25,11 @@
   .meta{ display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:12px; }
   .meta input.title{ flex:1; min-width:180px; font-size:17px; font-weight:800; border:none; background:transparent; padding:6px 2px; border-bottom:2px solid var(--line); }
   .meta input.date{ border:1px solid var(--line); border-radius:8px; padding:6px 8px; background:#fff; }
-  .day{ background:var(--card); border:1px solid var(--line); border-radius:14px; margin-bottom:14px; overflow:hidden; box-shadow:0 1px 4px rgba(0,0,0,.04); }
+  .day{ background:var(--card); border:1px solid var(--line); border-radius:14px; margin-bottom:26px; overflow:hidden; box-shadow:0 2px 8px rgba(0,0,0,.07); }
+  .day-banner{ background:#4f7a4f; color:#fff; padding:9px 13px; display:flex; align-items:center; gap:10px; }
+  .day-no{ background:rgba(255,255,255,.22); border-radius:12px; padding:2px 11px; font-weight:800; font-size:12px; letter-spacing:.03em; white-space:nowrap; }
+  .day-date{ font-weight:800; font-size:16px; white-space:nowrap; }
+  .day-tag{ margin-left:auto; background:rgba(255,255,255,.22); border-radius:10px; padding:2px 9px; font-size:11px; font-weight:800; white-space:nowrap; }
   .day-head{ background:var(--green); padding:9px 12px; display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
   .day-head input.d-date{ border:1px solid #c6d6b8; border-radius:8px; padding:5px 8px; background:#fff; width:120px; }
   .day-head input.d-label{ flex:1; min-width:120px; border:none; background:transparent; font-weight:800; font-size:15px; padding:4px 2px; }
@@ -109,6 +113,7 @@ function newLeg(){ return {fromStn:'',depTime:'',toStn:'',arrTime:'',train:'',se
 function newItem(k){ return {kind:k||'食事',name:'',place:'',time:'',memo:'',photos:[]}; }
 function newDay(){ return {date:'',label:'',noTravel:false,legs:[],items:[]}; }
 function nextDate(ymd){ if(!/^\d{4}-\d{2}-\d{2}$/.test(ymd||'')) return ''; const d=new Date(ymd+'T00:00:00'); d.setDate(d.getDate()+1); const p=n=>String(n).padStart(2,'0'); return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate()); }
+function fmtJDate(ymd){ if(!/^\d{4}-\d{2}-\d{2}$/.test(ymd||'')) return ''; const d=new Date(ymd+'T00:00:00'); const w='日月火水木金土'[d.getDay()]; return (d.getMonth()+1)+'月'+d.getDate()+'日('+w+')'; }
 // di より前で「最後に到着した駅」を返す(発駅の自動補完用)
 function prevArrival(t,di){ for(let i=Math.min(di,t.days.length)-1;i>=0;i--){ const lg=t.days[i].legs; if(lg&&lg.length) return lg[lg.length-1].toStn||''; } return ''; }
 function newTrip(){ return {id:uid(),title:'新しい旅程',start:'',end:'',days:[newDay()]}; }
@@ -174,11 +179,14 @@ function render(){
   </div>`;
   // 独立した行程サマリー領域(タイトルと入力エリアの間)
   h+=`<div class="ov-area"><div class="ttl">🚃 行程サマリー</div>`;
-  t.days.forEach((d,di)=>{ h+=`<div class="ov-day"><div class="ov-day-lbl">${esc(d.label||d.date||('Day '+(di+1)))}</div><div id="ov-${di}">${overviewHTML(d)}</div></div>`; });
+  t.days.forEach((d,di)=>{ const dl=`Day ${di+1}${fmtJDate(d.date)?' · '+fmtJDate(d.date):''}${d.label?'　'+d.label:''}`;
+    h+=`<div class="ov-day"><div class="ov-day-lbl">${esc(dl)}</div><div id="ov-${di}">${overviewHTML(d)}</div></div>`; });
   h+=`</div>`;
   // 入力エリア
   t.days.forEach((d,di)=>{
-    h+=`<div class="day"><div class="day-head">
+    h+=`<div class="day">
+      <div class="day-banner"><span class="day-no">Day ${di+1}</span><span class="day-date">${esc(fmtJDate(d.date)||'日付未設定')}</span>${d.noTravel?'<span class="day-tag">🛏 移動なし</span>':''}</div>
+      <div class="day-head">
       <input class="d-date" type="date" data-d="${di}" data-f="date" value="${esc(d.date)}">
       <input class="d-label" data-d="${di}" data-f="label" value="${esc(d.label)}" placeholder="例：品川→嵐山">
       <label class="nomove-chk"><input type="checkbox" data-d="${di}" data-f="noTravel" ${d.noTravel?'checked':''}>移動なし</label>
