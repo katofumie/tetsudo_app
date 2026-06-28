@@ -57,8 +57,14 @@
   .photo-btn{ font-size:12px; }
   .foot{ display:flex; justify-content:space-between; align-items:center; margin-top:4px; }
   .empty{ color:var(--muted); text-align:center; padding:40px 12px; }
+  /* 独立した行程サマリー領域 */
+  .ov-area{ background:#fff; border:1px solid var(--line); border-radius:14px; margin-bottom:16px; padding-bottom:6px; box-shadow:0 1px 4px rgba(0,0,0,.04); overflow:hidden; }
+  .ov-area .ttl{ font-size:11px; color:var(--muted); font-weight:800; padding:9px 12px 2px; letter-spacing:.05em; background:#fbfaf5; border-bottom:1px solid var(--line); }
+  .ov-day{ border-top:1px solid #f1ede2; }
+  .ov-day:first-of-type{ border-top:none; }
+  .ov-day-lbl{ font-size:12px; font-weight:800; color:var(--ink); padding:8px 12px 0; }
   /* 横並びサマリー(1日の移動を一望) */
-  .overview{ display:flex; align-items:stretch; overflow-x:auto; padding:11px 12px; background:#fbfaf5; border-bottom:1px solid var(--line); -webkit-overflow-scrolling:touch; }
+  .overview{ display:flex; align-items:stretch; overflow-x:auto; padding:6px 12px 10px; -webkit-overflow-scrolling:touch; }
   .ov-stn{ flex:0 0 auto; text-align:center; min-width:62px; padding:0 4px; display:flex; flex-direction:column; justify-content:center; }
   .ov-stn .nm{ font-weight:800; font-size:13px; white-space:nowrap; }
   .ov-stn .t{ font-size:11px; white-space:nowrap; line-height:1.5; }
@@ -156,13 +162,17 @@ function render(){
     <input class="date" type="date" data-f="end" value="${esc(t.end)}">
     <button class="btn del" data-act="deltrip">旅程を削除</button>
   </div>`;
+  // 独立した行程サマリー領域(タイトルと入力エリアの間)
+  h+=`<div class="ov-area"><div class="ttl">🚃 行程サマリー</div>`;
+  t.days.forEach((d,di)=>{ h+=`<div class="ov-day"><div class="ov-day-lbl">${esc(d.label||d.date||('Day '+(di+1)))}</div><div id="ov-${di}">${overviewHTML(d)}</div></div>`; });
+  h+=`</div>`;
+  // 入力エリア
   t.days.forEach((d,di)=>{
     h+=`<div class="day"><div class="day-head">
       <input class="d-date" type="date" data-d="${di}" data-f="date" value="${esc(d.date)}">
       <input class="d-label" data-d="${di}" data-f="label" value="${esc(d.label)}" placeholder="例：品川→嵐山">
       <button class="btn del" data-act="delday" data-d="${di}">日を削除</button>
     </div>`;
-    h+=`<div id="ov-${di}">${overviewHTML(d)}</div>`;
     // legs
     h+=`<div class="sec"><h3>区間（鉄道）</h3>`;
     d.legs.forEach((lg,li)=>{
