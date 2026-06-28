@@ -321,7 +321,7 @@ function applyScale(){
   gPoi.style.display   =(s<=0.0011)?'':'none';
   gPref.style.display  =(s>=0.00011)?'':'none';
   const rs=4.8*s; gStn.querySelectorAll('circle').forEach(c=>c.setAttribute('r',rs));
-  const rp=3.0*s; gPoi.querySelectorAll('circle').forEach(c=>c.setAttribute('r',rp));
+  const rp=7*s; gPoi.querySelectorAll('circle').forEach(c=>c.setAttribute('r',rp));
   scheduleStations();
 }
 
