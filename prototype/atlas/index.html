@@ -45,6 +45,10 @@
   .legend{ display:flex; gap:12px; flex-wrap:wrap; margin-top:7px; color:var(--muted); }
   .legend i{ width:10px; height:10px; border-radius:50%; display:inline-block; vertical-align:middle; margin-right:4px; }
   .hint{ color:var(--muted); margin-top:6px; line-height:1.5; }
+  .zoom{ position:absolute; right:12px; bottom:128px; z-index:3; display:flex; flex-direction:column; gap:7px; }
+  .zoom button{ width:44px; height:44px; border-radius:50%; border:1px solid #cdd6dd; background:rgba(255,255,255,.94);
+    font-size:24px; font-weight:700; color:var(--ink); box-shadow:0 2px 8px rgba(0,0,0,.14); cursor:pointer; line-height:1; padding:0; }
+  .zoom button:active{ background:#e9eef0; }
   .toast{ position:absolute; left:50%; bottom:96px; transform:translateX(-50%) translateY(15px); z-index:3;
     background:var(--on); color:#fff; font-weight:700; padding:8px 16px; border-radius:24px; font-size:13px; opacity:0; transition:all .3s; pointer-events:none; }
   .toast.show{ opacity:1; transform:translateX(-50%) translateY(0); }
@@ -89,6 +93,11 @@
   </div>
   <div class="hint">線=塗る／駅=通過→下車→泊まった。ドラッグ移動・ピンチ/ホイール拡大。引くと県名・温泉・観光、寄ると駅名。
     ※鉄道サンプル/スポットは概略の内蔵データ。県境は実データ取込時に追加予定。</div>
+</div>
+
+<div class="zoom">
+  <button id="zin" aria-label="拡大">＋</button>
+  <button id="zout" aria-label="縮小">−</button>
 </div>
 
 <div class="toast" id="toast"></div>
@@ -330,6 +339,9 @@ function update(milestone){
 g('reset').addEventListener('click',()=>{ segs.forEach(s=>s.on=false); stns.forEach(s=>s.st=0); store.paint={seg:[],stn:{}}; render(); saveState(); toast('塗りをリセットしました'); });
 g('fit').addEventListener('click',fitRail);
 g('japan').addEventListener('click',fitJapan);
+function zoomCenter(k){ zoomAt(toUser(VW()/2, VH()/2), k); }
+g('zin').addEventListener('click',()=>zoomCenter(0.7));
+g('zout').addEventListener('click',()=>zoomCenter(1.43));
 g('sample').addEventListener('click',()=>{ store.rail=store.borders=store.spots=null; store.paint={seg:[],stn:{}};
   borders=[]; spots=POIS.map(p=>({name:p[0],lat:p[1],lng:p[2],type:p[3]}));
   buildSample(); render(); fitRail(); idbSet('state',null); toast('サンプルに戻しました'); });
