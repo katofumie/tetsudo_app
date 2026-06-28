@@ -110,6 +110,8 @@
   </div>
   <select id="tripSel"></select>
   <button class="btn" id="newTrip">＋新規旅程</button>
+  <button class="btn" id="exportBtn" title="全旅程をJSONファイルに書き出し（バックアップ・端末移行用）">⬇️書き出し</button>
+  <label class="btn" id="importLbl" style="cursor:pointer" title="JSONファイルから読み込み（同じ旅程は上書き・新規は追加）">⬆️読み込み<input id="importFile" type="file" accept="application/json,.json" style="display:none"></label>
   <button class="btn" id="saveBtn" style="margin-left:auto">💾 保存</button>
   <span id="saveStatus" style="font-size:11px;color:var(--muted)"></span>
 </header>
@@ -313,6 +315,32 @@ g('tripSel').addEventListener('change', e=>{ cur=+e.target.value; render(); });
 g('newTrip').addEventListener('click', ()=>{ trips.push(newTrip()); cur=trips.length-1; renderShell(); render(); save(); });
 g('saveBtn').addEventListener('click', async()=>{ setStatus('保存中…'); await idbSet('trips',trips); setStatus('✓ 保存しました'); });
 
+// ===== 書き出し/読み込み(JSON) =====：端末をまたぐ移行・バックアップ用（アカウント不要）
+function ymdNow(){ const d=new Date(), p=n=>String(n).padStart(2,'0'); return ''+d.getFullYear()+p(d.getMonth()+1)+p(d.getDate()); }
+g('exportBtn').addEventListener('click', ()=>{ try{
+  const payload={ app:'tetsudo-shiori', version:1, exportedAt:new Date().toISOString(), trips };
+  const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});
+  const url=URL.createObjectURL(blob), a=document.createElement('a');
+  a.href=url; a.download='shiori-backup-'+ymdNow()+'.json'; document.body.appendChild(a); a.click();
+  setTimeout(()=>{ a.remove(); URL.revokeObjectURL(url); },0); setStatus('✓ 書き出しました');
+}catch(e){ alert('書き出しに失敗しました'); } });
+g('importFile').addEventListener('change', async e=>{
+  const f=e.target.files&&e.target.files[0]; if(!f) return;
+  let data; try{ data=JSON.parse(await f.text()); }catch(err){ alert('JSONの読み込みに失敗しました'); e.target.value=''; return; }
+  const incoming = Array.isArray(data) ? data
+    : (data&&Array.isArray(data.trips)) ? data.trips
+    : (data&&data.id&&Array.isArray(data.days)) ? [data] : null;
+  if(!incoming||!incoming.length){ alert('しおりデータが見つかりませんでした'); e.target.value=''; return; }
+  if(!confirm(incoming.length+'件の旅程を読み込みます。\n同じ旅程は上書き・新しい旅程は追加します。よろしいですか？')){ e.target.value=''; return; }
+  const byId=new Map(trips.map(t=>[t.id,t])); let added=0,updated=0;
+  incoming.forEach(it=>{ if(!it||typeof it!=='object'||!Array.isArray(it.days)) return; if(!it.id) it.id=uid();
+    if(byId.has(it.id)){ trips[trips.indexOf(byId.get(it.id))]=it; byId.set(it.id,it); updated++; }
+    else { trips.push(it); byId.set(it.id,it); added++; } });
+  const firstId=incoming[0]&&incoming[0].id;
+  migrate(); cur=Math.max(0, trips.findIndex(t=>t.id===firstId)); renderShell(); render(); save();
+  e.target.value=''; setStatus('✓ 読み込み完了'); alert('読み込み完了：追加 '+added+'件 / 上書き '+updated+'件');
+});
+
 // 旧・日単位の昼/夜/宿フィールドを予定(item)へ移行(データ保全)
 function migrate(){ trips.forEach(t=>(t.days||[]).forEach(d=>{ d.items=d.items||[];
   const add=(k,v)=>{ if(v && !d.items.some(x=>x.kind===k)){ const it=newItem(k); it.name=v; d.items.push(it); } };
@@ -323,9 +351,9 @@ function migrate(){ trips.forEach(t=>(t.days||[]).forEach(d=>{ d.items=d.items||
 })); }
 (async function boot(){
   const saved=await idbGet('trips');
-  trips = (Array.isArray(saved)&&saved.length)? saved : [newTrip()];
-  migrate();
-  cur=0; renderShell(); render(); save();
+  if(Array.isArray(saved)&&saved.length){ trips=saved; migrate(); cur=0; renderShell(); render(); save(); }
+  // 読込が空/失敗のときは空の旅程を「保存しない」(一時的な読込失敗で実データを上書きする事故を防止)
+  else { trips=[newTrip()]; cur=0; renderShell(); render(); }
 })();
 </script>
 </body>
