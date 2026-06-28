@@ -49,6 +49,9 @@
   .zoom button{ width:44px; height:44px; border-radius:50%; border:1px solid #cdd6dd; background:rgba(255,255,255,.94);
     font-size:24px; font-weight:700; color:var(--ink); box-shadow:0 2px 8px rgba(0,0,0,.14); cursor:pointer; line-height:1; padding:0; }
   .zoom button:active{ background:#e9eef0; }
+  .tip{ position:absolute; z-index:6; background:rgba(20,28,40,.92); color:#fff; font-size:12px; font-weight:700;
+    padding:5px 9px; border-radius:8px; pointer-events:none; opacity:0; transition:opacity .12s; white-space:nowrap; max-width:60vw; }
+  .tip.show{ opacity:1; }
   .toast{ position:absolute; left:50%; bottom:96px; transform:translateX(-50%) translateY(15px); z-index:3;
     background:var(--on); color:#fff; font-weight:700; padding:8px 16px; border-radius:24px; font-size:13px; opacity:0; transition:all .3s; pointer-events:none; }
   .toast.show{ opacity:1; transform:translateX(-50%) translateY(0); }
@@ -100,6 +103,7 @@
   <button id="zout" aria-label="縮小">−</button>
 </div>
 
+<div class="tip" id="tip"></div>
 <div class="toast" id="toast"></div>
 <div class="drop" id="drop">路線GeoJSONをドロップ</div>
 
@@ -194,7 +198,7 @@ function buildSample(){
     L.forEach(st=>{ if(!seen.has(st[0])){ seen.set(st[0],sid);
       stns.push({id:sid,name:st[0],lat:st[1],lng:st[2],st:0,p:px(st[2],st[1])}); sid++; } });
     for(let i=0;i<last;i++){ const a=L[i], b=L[(i+1)%L.length];
-      segs.push({ id:segs.length, pts:[px(a[2],a[1]),px(b[2],b[1])], on:false, color:line.color,
+      segs.push({ id:segs.length, pts:[px(a[2],a[1]),px(b[2],b[1])], on:false, color:line.color, name:line.name,
         km:hav({lat:a[1],lng:a[2]},{lat:b[1],lng:b[2]}) }); }
     let sx=0,sy=0; L.forEach(s=>{sx+=s[2];sy+=s[1];});
     lineLbls.push({name:line.name, color:line.color, p:px(sx/L.length, sy/L.length)});
@@ -203,13 +207,13 @@ function buildSample(){
 // 種類別ローダ：線=路線 / 面=県境 / 点=スポット
 function setRail(lineFeats){
   segs=[]; stns=[]; lineLbls=[]; showStations=false; const seenN=new Set();
-  const add=(c,color)=>{ if(c.length<2)return; const pts=c.map(p=>px(p[0],p[1])); let km=0;
+  const add=(c,color,name)=>{ if(c.length<2)return; const pts=c.map(p=>px(p[0],p[1])); let km=0;
     for(let i=0;i<c.length-1;i++) km+=hav({lng:c[i][0],lat:c[i][1]},{lng:c[i+1][0],lat:c[i+1][1]});
-    segs.push({id:segs.length,pts,on:false,km,color:color||'var(--off)'}); };
+    segs.push({id:segs.length,pts,on:false,km,color:color||'var(--off)',name:name||''}); };
   lineFeats.forEach(f=>{ const gm=f.geometry; if(!gm)return;
     const col=(f.properties&&f.properties.color)||null;
-    if(gm.type==='LineString') add(gm.coordinates,col); else if(gm.type==='MultiLineString') gm.coordinates.forEach(c=>add(c,col));
-    const nm=f.properties&&(f.properties.name||f.properties.N02_003||f.properties['路線名']);
+    const nm=(f.properties&&(f.properties.name||f.properties.N02_003||f.properties['路線名']))||'';
+    if(gm.type==='LineString') add(gm.coordinates,col,nm); else if(gm.type==='MultiLineString') gm.coordinates.forEach(c=>add(c,col,nm));
     if(nm && !seenN.has(nm)){ seenN.add(nm);
       const cs=gm.type==='LineString'?gm.coordinates:(gm.type==='MultiLineString'?gm.coordinates[0]:null);
       if(cs&&cs.length){ const m=cs[Math.floor(cs.length/2)]; lineLbls.push({name:nm,color:col||'#5b6b7a',p:px(m[0],m[1])}); } }
@@ -308,6 +312,17 @@ svg.addEventListener('pointercancel',e=>{ ptrs.delete(e.pointerId); panLast=null
 function zoomAt(u,k){ k=Math.max(0.2,Math.min(5,k)); const nw=Math.max(0.0006,Math.min(60,vb.w*k)),nh=nw*(vb.h/vb.w);
   vb.x=u.x-(u.x-vb.x)*(nw/vb.w); vb.y=u.y-(u.y-vb.y)*(nh/vb.h); vb.w=nw; vb.h=nh; scheduleScale(); }
 svg.addEventListener('wheel',e=>{ e.preventDefault(); zoomAt(toUser(e.clientX,e.clientY), e.deltaY>0?1.15:0.87); },{passive:false});
+
+// 路線ホバーで路線名ツールチップ
+const tip=g('tip');
+function showTip(t,x,y){ tip.textContent=t; tip.style.left=(x+12)+'px'; tip.style.top=(y+14)+'px'; tip.classList.add('show'); }
+function hideTip(){ tip.classList.remove('show'); }
+svg.addEventListener('mousemove', e=>{ if(ptrs.size){ hideTip(); return; }
+  const t=e.target, sg=t&&t.getAttribute&&t.getAttribute('data-seg');
+  if(sg!=null){ const s=segs[+sg]; if(s&&s.name){ showTip(s.name, e.clientX, e.clientY); return; } }
+  hideTip(); });
+svg.addEventListener('mouseleave', hideTip);
+svg.addEventListener('pointerdown', hideTip);
 
 // 細い線でも当てやすいよう、近傍を少しずつ探る(当たり判定レイヤー廃止の代替)
 function pick(cx,cy){
