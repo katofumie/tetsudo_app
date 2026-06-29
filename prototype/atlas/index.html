@@ -308,47 +308,61 @@ function render(){
 }
 
 // 駅は数が多いので「画面に映る範囲だけ」描く(間引き)
+let visStn=[];   // 描画した駅ラベルの占有範囲(路線名の重なり回避に使う)
 function renderStations(){
-  gStn.innerHTML=''; gLbl.innerHTML='';
+  gStn.innerHTML=''; gLbl.innerHTML=''; visStn=[];
   if(!showStations) return;
   const s=vb.w/VW(); if(s>0.025) return;
   const m=vb.w*0.1, x0=vb.x-m, x1=vb.x+vb.w+m, y0=vb.y-m, y1=vb.y+vb.h+m;
-  const r=4.8*s; let n=0;
+  const r=4.8*s, lblH=10*s; let n=0;
   for(const st of stns){ const p=st.p; if(p[0]<x0||p[0]>x1||p[1]<y0||p[1]>y1) continue;
     const imp=st.imp||1;                              // 重要度(路線数)が高いほど早く(引いた状態で)表示
     const dotMax = imp>=6?0.022 : imp>=4?0.005 : imp>=3?0.0028 : imp>=2?0.0011 : 0.00055;
     if(s>dotMax) continue;
     gStn.appendChild(mk('circle',{cx:p[0],cy:p[1],r,class:'stn'+stCls(st.st),'data-stn':st.id}));
     gLbl.appendChild(mk('text',{x:p[0],y:p[1]-0.006,'text-anchor':'middle',class:'lbl'},st.name));  // 丸と名前を連動
+    // 駅名は丸の上(y-0.006)に横書き。丸＋名前を覆う矩形を障害物として記録
+    visStn.push({x:p[0], y:p[1]-(0.006+lblH)/2, hw:(st.name.length*lblH)/2+lblH*0.3, hh:(0.006+lblH)/2+r});
     if(++n>1500) break; }
 }
 let stnT2; function scheduleStations(){ clearTimeout(stnT2); stnT2=setTimeout(()=>{ renderStations(); renderLineLabels(); },90); }
 
 // 路線名を「線路に沿う形」で表示。拡大時(主要駅名が出るころ)に、画面内の各路線につき
-// 画面中心に近い区間を1つ選び、その向きに回転させて名前を置く（スマホでもタップ不要で読める）。
+// 「駅ラベルから最も離れた」区間を選んで線の向きに回転して置く。空きが無い路線は表示しない
+// （駅名と重ならないことを最優先）。文字のみ・控えめ・線路の少し上にオフセット。
 function renderLineLabels(){
   gLine.innerHTML='';
   const s=vb.w/VW();
   if(s>0.012) return;                                  // 主要駅名と同じころに表示
   const m=vb.w*0.05, x0=vb.x-m,x1=vb.x+vb.w+m, y0=vb.y-m,y1=vb.y+vb.h+m;
   const cx=vb.x+vb.w/2, cy=vb.y+vb.h/2;
-  const chosen=new Map();                              // 路線名→画面中心に最も近い区間
+  const fs=8.5*s, off=fs*0.9;
+  // 点(px,py)から駅ラベル矩形までの最短距離（大きいほど空いている）
+  function stnClear(px,py){ let best=1e18;
+    for(const o of visStn){ const dx=Math.abs(px-o.x)-o.hw, dy=Math.abs(py-o.y)-o.hh;
+      const d=Math.hypot(dx>0?dx:0, dy>0?dy:0); if(d<best){ best=d; if(best===0) break; } }
+    return best; }
+  // 路線ごとに「駅から最も離れ、かつ中心寄り」の区間を1つ選ぶ
+  const cand=new Map();
   for(const seg of segs){ const nm=seg.name; if(!nm) continue;
     const pts=seg.pts, a=pts[0], b=pts[pts.length-1];
     const mx=(a[0]+b[0])/2, my=(a[1]+b[1])/2;
     if(mx<x0||mx>x1||my<y0||my>y1) continue;
     if(a[0]===b[0]&&a[1]===b[1]) continue;
-    const d2=(mx-cx)*(mx-cx)+(my-cy)*(my-cy), ex=chosen.get(nm);
-    if(!ex||d2<ex.d2){ let ang=Math.atan2(b[1]-a[1], b[0]-a[0])*180/Math.PI;
+    const clr=stnClear(mx, my-off);                    // ラベルは線の少し上に出るのでそこで判定
+    const dc=Math.hypot(mx-cx,my-cy);
+    const score=clr - dc*0.12;                          // 空き重視＋中心寄り
+    const ex=cand.get(nm);
+    if(!ex||score>ex.score){ let ang=Math.atan2(b[1]-a[1], b[0]-a[0])*180/Math.PI;
       if(ang>90) ang-=180; else if(ang<-90) ang+=180;  // 上下逆さま防止
-      chosen.set(nm,{d2,x:mx,y:my,ang}); } }
-  const fs=8.5*s, off=fs*0.75;                         // 控えめに小さく／線路の少し上にオフセット
-  // 画面中心に近い路線を優先し、重なるラベルは間引いて密集地でも読めるように
-  const arr=[...chosen.entries()].map(([nm,c])=>({nm,x:c.x,y:c.y,ang:c.ang,d2:c.d2,w:nm.length*fs})).sort((a,b)=>a.d2-b.d2);
+      cand.set(nm,{nm,x:mx,y:my,ang,clr,score}); } }
+  // 駅ラベルに十分かぶらないものだけ採用。路線名どうしの重なりも貪欲に間引く
+  const minClear=fs*0.7;
+  const arr=[...cand.values()].filter(c=>c.clr>=minClear).sort((a,b)=>b.score-a.score);
+  arr.forEach(c=>c.w=c.nm.length*fs);
   const placed=[]; let n=0;
   for(const c of arr){
-    let ok=true; for(const p of placed){ const dx=c.x-p.x,dy=c.y-p.y;
-      if(Math.hypot(dx,dy) < Math.max((c.w+p.w)*0.4, fs*3)){ ok=false; break; } }
+    let ok=true; for(const p of placed){ if(Math.hypot(c.x-p.x,c.y-p.y) < Math.max((c.w+p.w)*0.4, fs*3)){ ok=false; break; } }
     if(!ok) continue; placed.push(c);
     // 文字のみ。線の向きに回転しつつ、垂直方向にずらして線路の線と重ねない
     const t=mk('text',{x:c.x.toFixed(5),y:(c.y-off).toFixed(5),'text-anchor':'middle',class:'linelbl',
