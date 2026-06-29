@@ -297,7 +297,7 @@ function render(){
     gPoiLbl.appendChild(mk('text',{x:c[0],y:c[1]-0.006,'text-anchor':'middle',class:'poilbl'},(p.type==='o'?'♨':'')+p.name)); });
   // 鉄道（未塗装はくすみ色／塗り済みは緑。新幹線は太い帯＋内側の白いブロックで新幹線記号風）
   segs.forEach(s=>{ const d=pathd(s.pts);
-    if(s.shink){ const stroke=s.on?'var(--on)':'#3a3f45';
+    if(s.shink){ const stroke=s.on?'var(--on)':'#8a93a0';   // 未塗装はグレーっぽく淡く(白ブロックは見える程度)
       gSeg.appendChild(mk('path',{d,class:'seg shink'+(s.on?' on':''),stroke,'data-seg':s.id}));
       gSeg.appendChild(mk('path',{d,class:'tie','stroke-dasharray':'5 6'})); }    // 帯の中の白いブロック
     else { const stroke=s.on?'var(--on)':(s.muted||'var(--off)');
