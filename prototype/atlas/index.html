@@ -45,6 +45,7 @@
     background:rgba(255,255,255,.9); border-radius:14px; padding:9px 11px; box-shadow:0 2px 10px rgba(0,0,0,.08); font-size:12px; }
   .panel .row{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
   .panel button,.fake{ background:#f3f6f7; color:var(--ink); border:1px solid #cdd6dd; border-radius:18px; padding:7px 12px; font-size:12px; font-weight:700; cursor:pointer; }
+  .panel button.active{ background:var(--on); color:#fff; border-color:var(--on2); }   /* 消しゴムモード中 */
   .panel input#q{ flex:1; min-width:140px; padding:7px 11px; border:1px solid #cdd6dd; border-radius:18px; font-size:13px; outline:none; }
   .panel input#q:focus{ border-color:var(--on); }
   .legend{ display:flex; gap:12px; flex-wrap:wrap; margin-top:7px; color:var(--muted); }
@@ -94,7 +95,8 @@
     <input id="q" placeholder="駅名・路線名で検索" />
     <button id="go">🔍</button>
     <button id="home">ホーム</button>
-    <button id="clear">塗り消去</button>
+    <button id="erase" title="なぞって塗りを部分的に消す（もう一度押すと解除）">🩹消しゴム</button>
+    <button id="clear" title="塗り・駅の状態をすべて消去">全消去</button>
     <button id="impShiori" title="しおりの行程を地図に塗り込む">📖取込</button>
     <button id="sample">サンプル</button>
     <label class="fake" style="margin-left:auto;">📁
@@ -110,7 +112,8 @@
   </div>
   <div class="hint">線=塗る／駅=通過→下車→泊まった。ドラッグ移動・ピンチ/＋−で拡大縮小。
     検索窓に駅名・路線名を入れて移動。「ホーム」で全国表示に戻る。主要駅は引いた状態でも表示。
-    <b>📖取込</b>でしおりの行程の乗車区間を地図に自動で塗り込み（既存の塗りは残す）。</div>
+    <b>📖取込</b>でしおりの行程の乗車区間を地図に自動で塗り込み（既存の塗りは残す）。
+    <b>🩹消しゴム</b>でなぞって部分消去（移動は2本指）／<b>全消去</b>は確認あり。</div>
 </div>
 
 <div class="zoom">
@@ -276,6 +279,8 @@ function routeGeoJSON(gj){
 }
 const pathd=pts=>'M'+pts.map(p=>p[0].toFixed(5)+' '+p[1].toFixed(5)).join(' L');
 const stCls=s=>['',' pass',' off',' stay'][s];
+const segClass=s=>'seg'+(s.shink?' shink':'')+(s.on?' on':'');   // 新幹線(shink)/塗り(on)を保ったクラス
+let eraseMode=false;   // 消しゴムモード（なぞって部分消去）
 // 未塗装の路線色をグレー寄せの淡色(くすみ色)にして、塗り済み(緑)との差を一目で分かるように
 function muteColor(col){ const m=/^#?([0-9a-fA-F]{6})$/.exec((col||'').replace(/^#/,''));
   if(!m) return '#aeb7bf';
@@ -406,13 +411,16 @@ function scheduleScale(){ if(rafPending)return; rafPending=true; requestAnimatio
 const ptrs=new Map(); let moved=false,startT=0,panLast=null,pinchD=0;
 function toUser(cx,cy){ const r=svg.getBoundingClientRect(); return {x:vb.x+(cx-r.left)/r.width*vb.w, y:vb.y+(cy-r.top)/r.height*vb.h}; }
 svg.addEventListener('pointerdown',e=>{ svg.setPointerCapture(e.pointerId); ptrs.set(e.pointerId,{x:e.clientX,y:e.clientY}); moved=false; startT=Date.now();
-  if(ptrs.size===1) panLast={x:e.clientX,y:e.clientY}; else if(ptrs.size===2){ const p=[...ptrs.values()]; pinchD=Math.hypot(p[0].x-p[1].x,p[0].y-p[1].y); } });
+  if(ptrs.size===1){ panLast={x:e.clientX,y:e.clientY}; if(eraseMode) eraseAt(e.clientX,e.clientY); }  // 消しゴム時は1本指でなぞって消去(パンしない)
+  else if(ptrs.size===2){ const p=[...ptrs.values()]; pinchD=Math.hypot(p[0].x-p[1].x,p[0].y-p[1].y); } });
 svg.addEventListener('pointermove',e=>{ if(!ptrs.has(e.pointerId))return; ptrs.set(e.pointerId,{x:e.clientX,y:e.clientY});
+  if(ptrs.size===1 && eraseMode){ moved=true; eraseAt(e.clientX,e.clientY); return; }   // なぞり消去（パンより優先）
   if(ptrs.size===1&&panLast){ const dx=e.clientX-panLast.x,dy=e.clientY-panLast.y; if(Math.abs(dx)+Math.abs(dy)>4)moved=true;
     const r=svg.getBoundingClientRect(); vb.x-=dx/r.width*vb.w; vb.y-=dy/r.height*vb.h; panLast={x:e.clientX,y:e.clientY}; scheduleScale(); }
   else if(ptrs.size===2){ moved=true; const p=[...ptrs.values()]; const d=Math.hypot(p[0].x-p[1].x,p[0].y-p[1].y);
     if(pinchD){ zoomAt(toUser((p[0].x+p[1].x)/2,(p[0].y+p[1].y)/2), pinchD/d); } pinchD=d; } });
-function endPtr(e){ const tap=ptrs.size===1&&!moved&&(Date.now()-startT)<350; ptrs.delete(e.pointerId); panLast=null; pinchD=0; if(tap) handleTap(e.clientX,e.clientY); }
+function endPtr(e){ const tap=ptrs.size===1&&!moved&&(Date.now()-startT)<350; ptrs.delete(e.pointerId); panLast=null; pinchD=0;
+  if(tap && !eraseMode) handleTap(e.clientX,e.clientY); }   // 消しゴム中のタップは pointerdown 時に消去済み
 svg.addEventListener('pointerup',endPtr);
 svg.addEventListener('pointercancel',e=>{ ptrs.delete(e.pointerId); panLast=null; pinchD=0; });
 function zoomAt(u,k){ k=Math.max(0.2,Math.min(5,k)); const nw=Math.max(0.0006,Math.min(60,vb.w*k)),nh=nw*(vb.h/vb.w);
@@ -444,9 +452,27 @@ function handleTap(cx,cy){ const hit=pick(cx,cy); if(!hit)return;
     store.paint.stn[hit.stn]=s.st; saveState();
     vibrate(s.st===3?[25,40,25]:(s.st===0?15:30)); toast(s.name+'：'+['未訪問','通過','下車','泊まった'][s.st]); update(); return; }
   if(hit.seg!=null){ const s=segs[+hit.seg]; s.on=!s.on;
-    gSeg.querySelector(`[data-seg="${hit.seg}"]`).setAttribute('class','seg'+(s.on?' on':''));
+    gSeg.querySelector(`[data-seg="${hit.seg}"]`).setAttribute('class',segClass(s));
     if(s.on) store.paint.seg.push(+hit.seg); else store.paint.seg=store.paint.seg.filter(x=>x!==+hit.seg);
     saveState(); vibrate(s.on?35:18); update(s.on); } }
+
+// 消去できる対象(状態付きの駅 or 塗り済み区間)だけを近傍から探す。未訪問駅や未塗装は飛ばして
+// 下の塗りを拾えるようにする(駅の丸は線の上に描かれるため)。
+function pickErase(cx,cy){
+  const tries=[[0,0],[0,-5],[0,5],[-5,0],[5,0],[-4,-4],[4,4],[-4,4],[4,-4],[0,-10],[0,10],[-10,0],[10,0]];
+  for(const [dx,dy] of tries){ const el=document.elementFromPoint(cx+dx,cy+dy); if(!el||!el.getAttribute)continue;
+    const st=el.getAttribute('data-stn'); if(st!=null && stns[+st] && stns[+st].st>0) return {stn:st};
+    const sg=el.getAttribute('data-seg'); if(sg!=null && segs[+sg] && segs[+sg].on) return {seg:sg}; }
+  return null;
+}
+// 消しゴム：なぞった/タップした区間の塗りと駅の状態を消す（部分消去）
+function eraseAt(cx,cy){ const hit=pickErase(cx,cy); if(!hit) return;
+  if(hit.seg!=null){ const s=segs[+hit.seg]; s.on=false;
+    const el=gSeg.querySelector(`[data-seg="${hit.seg}"]`); if(el) el.setAttribute('class',segClass(s));
+    store.paint.seg=store.paint.seg.filter(x=>x!==+hit.seg); saveState(); vibrate(12); update(); return; }
+  if(hit.stn!=null){ const s=stns[+hit.stn]; s.st=0;
+    const el=gStn.querySelector(`[data-stn="${hit.stn}"]`); if(el) el.setAttribute('class','stn');
+    delete store.paint.stn[hit.stn]; saveState(); vibrate(12); update(); } }
 
 function update(milestone){
   const n=segs.filter(s=>s.on).length, km=Math.round(segs.reduce((a,s)=>a+(s.on?s.km:0),0));
@@ -458,7 +484,12 @@ function update(milestone){
 }
 
 g('home').addEventListener('click',fitRail);   // デフォルト表示(全国)に戻る
-g('clear').addEventListener('click',()=>{ segs.forEach(s=>s.on=false); stns.forEach(s=>s.st=0); store.paint={seg:[],stn:{}}; render(); saveState(); toast('塗りを消去しました'); });
+g('clear').addEventListener('click',()=>{ if(!confirm('塗りと駅の状態をすべて消去します。本当によろしいですか？')) return;
+  segs.forEach(s=>s.on=false); stns.forEach(s=>s.st=0); store.paint={seg:[],stn:{}}; render(); saveState(); toast('すべての塗りを消去しました'); });
+// 消しゴムモード切替（なぞって部分消去）。ONの間は1本指でなぞると消える。移動は2本指 or 解除して。
+function setEraseMode(on){ eraseMode=on; g('erase').classList.toggle('active',on);
+  toast(on?'消しゴムモード ON（線/駅をなぞって消去・移動は2本指）':'消しゴムモード OFF'); }
+g('erase').addEventListener('click',()=>setEraseMode(!eraseMode));
 // 駅名・路線名 検索
 function goToPoint(p,w){ w=w||0.22; const h=w*(VH()/VW()); vb={x:p[0]-w/2,y:p[1]-h/2,w,h}; applyScale(); renderStations(); }
 function fitLine(name){ const xs=[],ys=[]; segs.forEach(s=>{ if(s.name===name) s.pts.forEach(p=>{xs.push(p[0]);ys.push(p[1]);}); }); if(xs.length) fitTo(xs,ys); }
