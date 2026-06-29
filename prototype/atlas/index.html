@@ -31,8 +31,8 @@
   text{ paint-order:stroke; stroke:var(--paper); stroke-width:2.6; stroke-linejoin:round;
     vector-effect:non-scaling-stroke; }
   .lbl{ fill:var(--ink); font-weight:600; pointer-events:none; }
-  .linelbl{ font-weight:800; fill:#37454f; stroke:none; pointer-events:none; }
-  .linebg{ fill:rgba(255,255,255,.9); stroke:#c1c9d1; stroke-width:1; vector-effect:non-scaling-stroke; pointer-events:none; }
+  .linelbl{ font-weight:700; fill:#6b7682; pointer-events:none;
+    paint-order:stroke; stroke:var(--paper); stroke-width:2; vector-effect:non-scaling-stroke; }
   .preflbl{ fill:var(--pref); font-weight:800; letter-spacing:.06em; pointer-events:none; }
   .poilbl{ fill:#5a6b59; font-weight:700; pointer-events:none; }
   .hud{ position:absolute; top:54px; left:10px; right:10px; z-index:2; display:flex; gap:8px;
@@ -342,19 +342,18 @@ function renderLineLabels(){
     if(!ex||d2<ex.d2){ let ang=Math.atan2(b[1]-a[1], b[0]-a[0])*180/Math.PI;
       if(ang>90) ang-=180; else if(ang<-90) ang+=180;  // 上下逆さま防止
       chosen.set(nm,{d2,x:mx,y:my,ang}); } }
-  const fs=11*s, h=fs*1.5;
+  const fs=8.5*s, off=fs*0.75;                         // 控えめに小さく／線路の少し上にオフセット
   // 画面中心に近い路線を優先し、重なるラベルは間引いて密集地でも読めるように
-  const arr=[...chosen.entries()].map(([nm,c])=>({nm,x:c.x,y:c.y,ang:c.ang,d2:c.d2,w:nm.length*fs*1.04+fs*0.8})).sort((a,b)=>a.d2-b.d2);
+  const arr=[...chosen.entries()].map(([nm,c])=>({nm,x:c.x,y:c.y,ang:c.ang,d2:c.d2,w:nm.length*fs})).sort((a,b)=>a.d2-b.d2);
   const placed=[]; let n=0;
   for(const c of arr){
     let ok=true; for(const p of placed){ const dx=c.x-p.x,dy=c.y-p.y;
-      if(Math.hypot(dx,dy) < Math.max((c.w+p.w)*0.38, fs*3)){ ok=false; break; } }
+      if(Math.hypot(dx,dy) < Math.max((c.w+p.w)*0.4, fs*3)){ ok=false; break; } }
     if(!ok) continue; placed.push(c);
-    const grp=mk('g',{transform:`rotate(${c.ang.toFixed(1)} ${c.x.toFixed(5)} ${c.y.toFixed(5)})`});
-    grp.appendChild(mk('rect',{x:(c.x-c.w/2).toFixed(5),y:(c.y-h/2).toFixed(5),width:c.w.toFixed(5),height:h.toFixed(5),rx:(h/2).toFixed(5),class:'linebg'}));
-    const t=mk('text',{x:c.x.toFixed(5),y:c.y.toFixed(5),'text-anchor':'middle','dominant-baseline':'central',class:'linelbl'}, c.nm);
-    t.setAttribute('font-size',fs); grp.appendChild(t);
-    gLine.appendChild(grp);
+    // 文字のみ。線の向きに回転しつつ、垂直方向にずらして線路の線と重ねない
+    const t=mk('text',{x:c.x.toFixed(5),y:(c.y-off).toFixed(5),'text-anchor':'middle',class:'linelbl',
+      transform:`rotate(${c.ang.toFixed(1)} ${c.x.toFixed(5)} ${c.y.toFixed(5)})`}, c.nm);
+    t.setAttribute('font-size',fs); gLine.appendChild(t);
     if(++n>50) break; }
 }
 
