@@ -18,10 +18,9 @@
   svg{ width:100%; height:100%; display:block; background:var(--paper); touch-action:none; }
   .seg{ fill:none; stroke-width:1.3; stroke-linecap:round; stroke-linejoin:round;
     vector-effect:non-scaling-stroke; pointer-events:stroke; cursor:pointer; }
-  .seg.shink{ stroke-width:3; }                       /* 新幹線は太め */
+  .seg.shink{ stroke-width:2.4; }                     /* 新幹線の本線(レール)は少し太め */
   .seg.on{ stroke:var(--on)!important; stroke-width:4; }
-  .tie{ fill:none; stroke:#fff; stroke-width:3; stroke-linecap:butt; vector-effect:non-scaling-stroke; pointer-events:none; }
-  .tie.on{ stroke-width:4; }                            /* 塗り済み新幹線の枕木も太線に追従 */
+  .tie2{ stroke-width:1.5; stroke-linecap:round; vector-effect:non-scaling-stroke; pointer-events:none; }  /* 新幹線の枕木(線路に垂直) */
   .stn{ fill:#fff; stroke:#5b6b7a; stroke-width:1.6; vector-effect:non-scaling-stroke; cursor:pointer; }
   .stn.pass{ fill:var(--pass); stroke:var(--pass); }
   .stn.off{ fill:var(--get); stroke:var(--on2); }
@@ -72,7 +71,7 @@
 <body>
 <div id="wrap">
   <svg id="svg" xmlns="http://www.w3.org/2000/svg">
-    <g id="gBorder"></g><g id="gPref"></g><g id="gSeg"></g>
+    <g id="gBorder"></g><g id="gPref"></g><g id="gSeg"></g><g id="gTie"></g>
     <g id="gPoi"></g><g id="gPoiLbl"></g><g id="gStn"></g><g id="gLbl"></g><g id="gLine"></g>
   </svg>
 </div>
@@ -180,7 +179,7 @@ const svg=document.getElementById('svg');
 const VW=()=>window.innerWidth||document.documentElement.clientWidth||800;
 const VH=()=>window.innerHeight||document.documentElement.clientHeight||600;
 function sizeSvg(){ svg.style.width=VW()+'px'; svg.style.height=VH()+'px'; }
-const gBorder=g('gBorder'),gPref=g('gPref'),gSeg=g('gSeg'),gLine=g('gLine'),gPoi=g('gPoi'),gPoiLbl=g('gPoiLbl'),gStn=g('gStn'),gLbl=g('gLbl');
+const gBorder=g('gBorder'),gPref=g('gPref'),gSeg=g('gSeg'),gTie=g('gTie'),gLine=g('gLine'),gPoi=g('gPoi'),gPoiLbl=g('gPoiLbl'),gStn=g('gStn'),gLbl=g('gLbl');
 function g(id){return document.getElementById(id);}
 const NS='http://www.w3.org/2000/svg';
 const mk=(t,a,txt)=>{const e=document.createElementNS(NS,t);for(const k in a)e.setAttribute(k,a[k]); if(txt!=null)e.textContent=txt; return e;};
@@ -287,7 +286,7 @@ function muteColor(col){ const m=/^#?([0-9a-fA-F]{6})$/.exec((col||'').replace(/
 const isShink=nm=>/新幹線/.test(nm||'');
 
 function render(){
-  [gBorder,gPref,gSeg,gLine,gPoi,gPoiLbl,gStn,gLbl].forEach(x=>x.innerHTML='');
+  [gBorder,gPref,gSeg,gTie,gLine,gPoi,gPoiLbl,gStn,gLbl].forEach(x=>x.innerHTML='');
   // 県境(面)
   borders.forEach(d=> gBorder.appendChild(mk('path',{d,class:'border'})));
   // 県名
@@ -296,12 +295,11 @@ function render(){
   spots.forEach(p=>{ const c=px(p.lng,p.lat); const col=p.type==='o'?'var(--onsen)':'var(--spot)';
     gPoi.appendChild(mk('circle',{cx:c[0],cy:c[1],r:0.003,fill:col,stroke:'#fff','stroke-width':1.4,class:'poi'}));
     gPoiLbl.appendChild(mk('text',{x:c[0],y:c[1]-0.006,'text-anchor':'middle',class:'poilbl'},(p.type==='o'?'♨':'')+p.name)); });
-  // 鉄道（未塗装はくすみ色／塗り済みは緑。新幹線は太線＋白い枕木で線路風）
+  // 鉄道（未塗装はくすみ色／塗り済みは緑。新幹線は太いレール＋垂直の枕木で線路風）
   segs.forEach(s=>{ const d=pathd(s.pts); const stroke=s.on?'var(--on)':(s.muted||'var(--off)');
-    if(s.shink){ gSeg.appendChild(mk('path',{d,class:'seg shink'+(s.on?' on':''),stroke,'data-seg':s.id}));
-      gSeg.appendChild(mk('path',{d,class:'tie'+(s.on?' on':''),'stroke-dasharray':'1.6 3.4'})); }
-    else gSeg.appendChild(mk('path',{d,class:'seg'+(s.on?' on':''),stroke,'data-seg':s.id})); });
+    gSeg.appendChild(mk('path',{d,class:'seg'+(s.shink?' shink':'')+(s.on?' on':''),stroke,'data-seg':s.id})); });
   renderStations();
+  renderShinkTies();    // 新幹線の枕木(拡大時のみ)
   renderLineLabels();   // 路線名は線路に沿って(ビューポート内のみ)描画
   g('segT').textContent=segs.length; g('stnT').textContent=showStations?stns.length:0;
   applyScale(); update();
@@ -325,7 +323,32 @@ function renderStations(){
     visStn.push({x:p[0], y:p[1]-(0.006+lblH)/2, hw:(st.name.length*lblH)/2+lblH*0.3, hh:(0.006+lblH)/2+r});
     if(++n>1500) break; }
 }
-let stnT2; function scheduleStations(){ clearTimeout(stnT2); stnT2=setTimeout(()=>{ renderStations(); renderLineLabels(); },90); }
+let stnT2; function scheduleStations(){ clearTimeout(stnT2); stnT2=setTimeout(()=>{ renderStations(); renderShinkTies(); renderLineLabels(); },90); }
+
+// 新幹線は「線路っぽいイラスト」に：本線(太いレール)に対して垂直な短い線(枕木)を等間隔で並べる。
+// 枕木の間隔・長さは画面px基準にし、拡大時のみ描画(全国表示では太線のまま=重さ対策)。
+function renderShinkTies(){
+  gTie.innerHTML='';
+  const s=vb.w/VW();
+  if(s>0.02) return;                                   // 拡大したときだけ枕木を出す
+  const m=vb.w*0.05, x0=vb.x-m,x1=vb.x+vb.w+m, y0=vb.y-m,y1=vb.y+vb.h+m;
+  const step=7.5*s, half=3.4*s;                        // 枕木の間隔/半長(画面px換算)
+  let count=0;
+  for(const seg of segs){ if(!seg.shink) continue;
+    const stroke=seg.on?'var(--on)':(seg.muted||'#9aa7b4'), pts=seg.pts;
+    for(let i=0;i<pts.length-1;i++){ const a=pts[i], b=pts[i+1];
+      if((a[0]<x0&&b[0]<x0)||(a[0]>x1&&b[0]>x1)||(a[1]<y0&&b[1]<y0)||(a[1]>y1&&b[1]>y1)) continue;  // 画面外は飛ばす
+      const dx=b[0]-a[0], dy=b[1]-a[1], L=Math.hypot(dx,dy); if(L<1e-9) continue;
+      const ux=dx/L, uy=dy/L, nx=-uy, ny=ux;            // 進行方向の単位ベクトルと法線
+      for(let t=step*0.5; t<L; t+=step){
+        const cxp=a[0]+ux*t, cyp=a[1]+uy*t;
+        gTie.appendChild(mk('line',{x1:(cxp+nx*half).toFixed(5),y1:(cyp+ny*half).toFixed(5),
+          x2:(cxp-nx*half).toFixed(5),y2:(cyp-ny*half).toFixed(5),stroke,class:'tie2'}));
+        if(++count>3000) return;
+      }
+    }
+  }
+}
 
 // 路線名を「線路に沿う形」で表示。拡大時(主要駅名が出るころ)に、画面内の各路線につき
 // 「駅ラベルから最も離れた」区間を選んで線の向きに回転して置く。空きが無い路線は表示しない
