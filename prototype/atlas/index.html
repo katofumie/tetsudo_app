@@ -27,6 +27,7 @@
   .stn.stay{ fill:var(--stay); stroke:#c77f10; }
   .poi{ vector-effect:non-scaling-stroke; }
   .border{ fill:none; stroke:#8fa0b0; stroke-width:1.2; stroke-linejoin:round; vector-effect:non-scaling-stroke; pointer-events:none; }
+  .border.ken{ stroke:#ccd4db; stroke-width:1; }   /* 県境(内部)は薄く。海岸線/外周は上の.borderのまま */
   text{ paint-order:stroke; stroke:var(--paper); stroke-width:2.6; stroke-linejoin:round;
     vector-effect:non-scaling-stroke; }
   .lbl{ fill:var(--ink); font-weight:600; pointer-events:none; }
@@ -208,7 +209,7 @@ async function restore(){ const st=await idbGet('state'); if(!st||(!st.rail&&!st
   for(const k in (store.paint.stn||{})){ if(stns[k]) stns[k].st=store.paint.stn[k]; }
   render(); if(segs.length) fitRail(); toast('前回のデータを復元しました'); }
 
-let segs=[], stns=[], lineLbls=[], borders=[], showStations=true;
+let segs=[], stns=[], lineLbls=[], borders=[], kenkyo=[], showStations=true;   // borders=海岸線/外周, kenkyo=県境(内部)
 let spots=POIS.map(p=>({name:p[0],lat:p[1],lng:p[2],type:p[3]}));
 
 function buildSample(){
@@ -240,11 +241,21 @@ function setRail(lineFeats){
   });
 }
 function setBorders(polyFeats){
-  borders=[];
-  polyFeats.forEach(f=>{ const gm=f.geometry; if(!gm)return;
-    const polys = gm.type==='Polygon'?[gm.coordinates] : gm.type==='MultiPolygon'?gm.coordinates : [];
-    polys.forEach(rings=> rings.forEach(ring=>{ if(ring.length<3)return;
-      borders.push('M'+ring.map(c=>{const p=px(c[0],c[1]);return p[0].toFixed(5)+' '+p[1].toFixed(5);}).join(' L')+'Z'); }));
+  borders=[]; kenkyo=[];
+  // 隣接県が共有する辺=県境(薄く)、1県だけの辺=海岸線/外周(現状維持)に分ける。
+  const ekey=(a,b)=>{ const ra=a[0].toFixed(4)+','+a[1].toFixed(4), rb=b[0].toFixed(4)+','+b[1].toFixed(4); return ra<rb?ra+'|'+rb:rb+'|'+ra; };
+  const eachRing=cb=>polyFeats.forEach(f=>{ const gm=f.geometry; if(!gm)return;
+    const polys=gm.type==='Polygon'?[gm.coordinates]:gm.type==='MultiPolygon'?gm.coordinates:[]; polys.forEach(rings=>rings.forEach(cb)); });
+  const cnt=new Map();                                   // pass1: 辺の出現回数
+  eachRing(r=>{ for(let i=0;i<r.length-1;i++){ const k=ekey(r[i],r[i+1]); cnt.set(k,(cnt.get(k)||0)+1); } });
+  eachRing(r=>{ if(r.length<2)return;                    // pass2: 連続する同種の辺を1本のパスにまとめる
+    let cls=null, run=[];
+    const flush=()=>{ if(run.length>=2){ const d='M'+run.map(c=>{const p=px(c[0],c[1]);return p[0].toFixed(5)+' '+p[1].toFixed(5);}).join(' L'); (cls?kenkyo:borders).push(d); } run=[]; };
+    for(let i=0;i<r.length-1;i++){ const a=r[i],b=r[i+1]; const shared=(cnt.get(ekey(a,b))||0)>=2;
+      if(cls===null){ cls=shared; run=[a,b]; }
+      else if(shared===cls){ run.push(b); }
+      else { flush(); cls=shared; run=[a,b]; } }
+    flush();
   });
 }
 function setStations(pointFeats){
@@ -292,7 +303,8 @@ const isShink=nm=>/新幹線/.test(nm||'');
 
 function render(){
   [gBorder,gPref,gSeg,gLine,gPoi,gPoiLbl,gStn,gLbl].forEach(x=>x.innerHTML='');
-  // 県境(面)
+  // 県境(薄)＋海岸線/外周(現状維持)
+  kenkyo.forEach(d=> gBorder.appendChild(mk('path',{d,class:'border ken'})));
   borders.forEach(d=> gBorder.appendChild(mk('path',{d,class:'border'})));
   // 県名
   PREFS.forEach(p=>{ const c=px(p[2],p[1]); gPref.appendChild(mk('text',{x:c[0],y:c[1],'text-anchor':'middle',class:'preflbl'},p[0])); });
